@@ -211,8 +211,8 @@ def start_scan():
 
 def stop_scan():
     if sock:
-        sock.sendall(b's')
-    terminal.insert(tk.END, "Sent: s\n")
+        sock.sendall(b'h')
+    terminal.insert(tk.END, "Sent: h\n")
     terminal.see(tk.END)
 
 def clear_graph():
