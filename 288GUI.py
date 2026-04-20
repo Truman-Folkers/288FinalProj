@@ -15,10 +15,10 @@ MOVEMENT_SCALE = 1.0   # 1 unit on map = 1 cm; adjust once real scale is known
 # ============================================================
 # SOCKET SETUP  — comment back in when connected to robot
 # ============================================================
-sock = None
-# sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-# sock.connect((HOST, PORT))
-# sock.setblocking(False)
+#sock = None
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect((HOST, PORT))
+sock.setblocking(False)
 
 recv_buffer = ""
 
@@ -541,7 +541,7 @@ def load_demo_scans():
             "ir_vals":   [d[2] for d in data],
         })
 
-load_demo_scans()
+#load_demo_scans()
 
 # ============================================================
 # START
