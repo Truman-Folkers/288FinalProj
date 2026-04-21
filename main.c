@@ -16,6 +16,42 @@
 #include "adc.h"
 #include "PINGLogAnalyzer.h"
 
+// variable initialization
+//  Object containment
+struct object
+{
+    int number;
+    int angle;
+    float distance_cm;
+    int widthAng;
+    float widthLin;
+    int peakIR;
+};
+
+cyBOT_Scan_t sensorVals[5];
+int irPrev = 0;
+int irAverage;
+int startingAngle = 0;
+int endingAngle = 0;
+int inObject = 0;
+int midAngle = 0;
+int numObj = 0;
+int inObjectCounter = 0;
+int peakIR = 0;
+int peakAngle = 0;
+int riseCount = 0;
+int angleTurnRate = 1;
+int fallCount = 0;
+int candidateStartAngle = 0;
+
+struct object objArr[10];
+
+cyBOT_Scan_t scanData;
+char receivedChar;
+int m;
+
+/*============================================= */
+
 // Function to send a string to PuTTY one character at a time
 void sendString(char *str)
 {
@@ -99,6 +135,7 @@ void scan_and_map(oi_t *sensor_data)
     endingAngle = 0;
     peakIR = 0;
     peakAngle = 0;
+    int k = 0;
     memset(objArr, 0, sizeof(objArr));
     lcd_printf("Scanning...");
 
@@ -111,16 +148,13 @@ void scan_and_map(oi_t *sensor_data)
     for (angle = 0; angle <= 180; angle += angleTurnRate)
     {
 
-        cyBOT_Scan(angle, &scanData);
-        sensorVals[0] = scanData;
-
-        cyBOT_Scan(angle, &scanData);
-        sensorVals[1] = scanData;
-
-        cyBOT_Scan(angle, &scanData);
-        sensorVals[2] = scanData;
-
-        irAverage = (sensorVals[0].IR_raw_val + sensorVals[1].IR_raw_val + sensorVals[2].IR_raw_val) / 3;
+        int irSum = 0;
+        for (k = 0; k < 3; k++)
+        {
+            cyBOT_Scan(angle, &scanData);
+            irSum += scanData.IR_raw_val;
+        }
+        irAverage = irSum / 3;
 
         //------Object detection logic-----
         if (inObject == 0)
@@ -200,7 +234,7 @@ void scan_and_map(oi_t *sensor_data)
 
         sendString(buffer);
 
-        timer_waitMillis(50);
+        timer_waitMillis(20);
 
         receivedChar = returnChar;
         if (receivedChar == 'h')
@@ -237,6 +271,11 @@ void scan_and_map(oi_t *sensor_data)
     int j;
     int b;
     b = 1;
+    if (numObj == 0)
+    {
+        sendString("\r\nNo objects found.\r\n");
+        return;
+    }
     struct object smallestObj = objArr[0];
 
     // ---- Print Object Data to terminal ----
@@ -278,19 +317,14 @@ void scan_and_map(oi_t *sensor_data)
     }
 
     // make field map - CHECK VARS
-    for (m = 0; m < object_count; m++)
+    for (m = 0; m < numObj; m++)
     {
-        float angle2 = object_angle[m] * M_PI / 180.0;
-        main_map_x[m] = objArr[m].distance_cm * cos(angle2) + robot_x;
-        main_map_y[m] = objArr[m].distance_cm * sin(angle2) + robot_y;
+        float angle2 = objArr[m].angle * M_PI / 180.0;
+        map_x[m] = objArr[m].distance_cm * cos(angle2) + robot_x;
+        map_y[m] = objArr[m].distance_cm * sin(angle2) + robot_y;
     }
 
-    // copy map to movement
-    for (m = 0; m < object_count; m++)
-    {
-        map_x[m] = main_map_x[m];
-        map_y[m] = main_map_y[m];
-    }
+    return;
 }
 
 /*-----Main-----*/
@@ -299,9 +333,7 @@ int main(void)
     //    ObjectAnalyzer(log_data);
 
     // Initializing/Calibrating
-    char receivedChar;
     char buffer[100];
-    cyBOT_Scan_t scanData;
     oi_t *sensor_data = oi_alloc(); // allocating memory for the data
     lcd_init();
     timer_init();
@@ -318,39 +350,6 @@ int main(void)
     left_calibration_value = 1282750;
 
     lcd_printf("Send 'm'");
-
-    // Variable init
-    cyBOT_Scan_t sensorVals[5];
-    int irPrev = 0;
-    int irAverage;
-    int startingAngle = 0;
-    int endingAngle = 0;
-    int inObject = 0;
-    int midAngle = 0;
-    int numObj = 0;
-    int inObjectCounter = 0;
-    int peakIR = 0;
-    int peakAngle = 0;
-    int riseCount = 0;
-    int angleTurnRate = 1;
-    int fallCount = 0;
-    int candidateStartAngle = 0;
-
-    // array to map object coordinates
-    float main_map_x[10];
-    float main_map_y[10];
-
-    // Object containment
-    struct object
-    {
-        int number;
-        int angle;
-        float distance_cm;
-        int widthAng;
-        float widthLin;
-        int peakIR;
-    };
-    struct object objArr[100];
 
     while (1)
     {
