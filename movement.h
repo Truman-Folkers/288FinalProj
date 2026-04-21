@@ -16,6 +16,7 @@ extern volatile float map_x[10];
 extern volatile float map_y[10];
 extern volatile float robot_x;
 extern volatile float robot_y;
+extern volatile float robot_angle;
 extern volatile int object_count;
 extern volatile int smallest_object_num;
 extern volatile movement_cmd_t current_cmd;
