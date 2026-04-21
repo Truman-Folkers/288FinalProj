@@ -281,7 +281,7 @@ void scan_and_map(oi_t *sensor_data)
     for (m = 0; m < object_count; m++)
     {
         float angle2 = object_angle[m] * M_PI / 180.0;
-        main_map_x[m] = pbjArr[m].distance_cm * cos(angle2) + robot_x;
+        main_map_x[m] = objArr[m].distance_cm * cos(angle2) + robot_x;
         main_map_y[m] = objArr[m].distance_cm * sin(angle2) + robot_y;
     }
 
@@ -367,7 +367,13 @@ int main(void)
             lcd_clear();
             lcd_printf("Done");
         }
+        else if (receivedChar == 'h')
+        {
+            sendString("\r\nDone!\r\n");
+            break;
+        }
         movement_update(sensor_data);
+        // send directions to GUI
     }
     oi_free(sensor_data); // free memory
 }
