@@ -75,9 +75,9 @@ double turn_left(oi_t *sensor_data, double degrees)
 {
     double angle_robot = 0;
 
-    oi_setWheels(200, -200);
+    oi_setWheels(150, -150);
 
-    while (angle_robot < degrees)
+    while (angle_robot < degrees - 7)
     {
         oi_update(sensor_data);
         angle_robot = angle_robot + sensor_data->angle;
@@ -93,9 +93,9 @@ double turn_right(oi_t *sensor_data, double degrees)
     double two = 0 - degrees;
     double angle_robot = 0;
 
-    oi_setWheels(-200, 200);
+    oi_setWheels(-150, 150);
 
-    while (angle_robot > two)
+    while (angle_robot > two + 6)
     {
         oi_update(sensor_data);
         angle_robot = angle_robot + sensor_data->angle;
@@ -304,12 +304,10 @@ void movement_update(oi_t *sensor_data)
 
     case CMD_LEFT:
         turn_left(sensor_data, 90);
-        oi_setWheels(150, 150);
         break;
 
     case CMD_RIGHT:
         turn_right(sensor_data, 90);
-        oi_setWheels(150, 150);
         break;
 
     case CMD_STOP:
