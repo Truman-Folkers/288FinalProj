@@ -24,17 +24,17 @@ volatile int object_count = 0;
 volatile movement_cmd_t current_cmd = CMD_STOP;
 
 // Function to send a string to PuTTY one character at a time
-void sendString(int scale, char type )
-{
-    char sentString[5];
-    sprintf(sentString, "%d%c", scale, type);
-    int i = 0;
-    while (sentString[i] != '\0')
-    {
-        uart_sendChar(sentString[i]);
-        i++;
-    }
-}
+//void sendString(int scale, char type )
+//{
+//    char sentString[5];
+//    sprintf(sentString, "%d%c", scale, type);
+//    int i = 0;
+//    while (sentString[i] != '\0')
+//    {
+//        uart_sendChar(sentString[i]);
+//        i++;
+//    }
+//}
 
 double move_forward(oi_t *sensor_data, double distance_mm)
 {
@@ -294,21 +294,21 @@ void movement_update(oi_t *sensor_data)
     {
     case CMD_FORWARD:
         oi_setWheels(150, 150);
-        sendString(((int)(distance_mm * 10)), 'f');
+//        sendString(((int)(distance_mm * 10)), 'f');
         break;
 
     case CMD_BACKWARD:
         oi_setWheels(-150, -150);
-        sendString(((int)(distance_mm * 10)), 'b');
+//        sendString(((int)(distance_mm * 10)), 'b');
         break;
 
     case CMD_LEFT:
-        turn_left(sensor_data, 0);
+        turn_left(sensor_data, 90);
         oi_setWheels(150, 150);
         break;
 
     case CMD_RIGHT:
-        turn_right(sensor_data, 0);
+        turn_right(sensor_data, 90);
         oi_setWheels(150, 150);
         break;
 

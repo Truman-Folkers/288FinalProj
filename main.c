@@ -404,7 +404,7 @@ int main(void)
         }else{
             movement_update(sensor_data);
         }
-        lastChar = recievedChar;
+        lastChar = receivedChar;
     }
     oi_free(sensor_data); // free memory
 }

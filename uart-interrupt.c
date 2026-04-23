@@ -159,21 +159,26 @@ void UART1_Handler(void)
                 command_flag = 1;
             }
 
-            switch (byte_received)
+            switch ((char)byte_received)
             {
             case 'w':
+                returnChar = (char)byte_received;
                 current_cmd = CMD_FORWARD;
                 break;
             case 's':
+                returnChar = (char)byte_received;
                 current_cmd = CMD_BACKWARD;
                 break;
             case 'a':
+                returnChar = (char)byte_received;
                 current_cmd = CMD_LEFT;
                 break;
             case 'd':
+                returnChar = (char)byte_received;
                 current_cmd = CMD_RIGHT;
                 break;
             case 'x':
+                returnChar = (char)byte_received;
                 current_cmd = CMD_STOP;
                 break;
             default:

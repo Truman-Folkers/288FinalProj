@@ -25,6 +25,7 @@ movement.obj: C:/ti/ccs1271/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/include/mat
 movement.obj: C:/ti/ccs1271/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/include/_defs.h
 movement.obj: C:/ti/ccs1271/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/include/machine/_limits.h
 movement.obj: ../lcd.h
+movement.obj: ../uart-interrupt.h
 movement.obj: ../movement.h
 movement.obj: ../movement.h
 
@@ -77,6 +78,8 @@ C:/ti/ccs1271/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/include/_defs.h:
 C:/ti/ccs1271/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/include/machine/_limits.h:
 
 ../lcd.h:
+
+../uart-interrupt.h:
 
 ../movement.h:
 
