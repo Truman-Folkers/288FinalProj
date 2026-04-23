@@ -15,7 +15,7 @@
 extern volatile uint32_t g_start_time;
 extern volatile uint32_t g_end_time;
 typedef volatile enum{LOW, HIGH, DONE} State;
-extern State g_state;
+volatile extern State g_state;
 
 /**
  * Initialize ping sensor. Uses PB3 and Timer 3B

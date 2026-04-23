@@ -16,7 +16,7 @@
 
 volatile uint32_t g_start_time = 0;
 volatile uint32_t g_end_time = 0;
-State g_state = LOW; // State of ping echo pulse
+volatile State g_state = LOW; // State of ping echo pulse
 
 void ping_init (void){
 
@@ -25,8 +25,8 @@ void ping_init (void){
     SYSCTL_RCGCGPIO_R |= 0x02;
 
     //busy-wait for system clocks
-    while((SYSCTL_RCGCTIMER_R & 0x08) == 0) {};
-    while((SYSCTL_RCGCGPIO_R & 0x02) == 0) {};
+    while((SYSCTL_PRTIMER_R & 0x08) == 0) {}
+    while((SYSCTL_PRGPIO_R & 0x02) == 0) {}
 
 
     //set PB3 to alt
@@ -97,6 +97,7 @@ void ping_trigger (void){
 
     // Re-enable alternate function, timer interrupt, and timer
     TIMER3_ICR_R |= 0x400;
+    GPIO_PORTB_DIR_R &= ~0x08;
     GPIO_PORTB_AFSEL_R |= 0x08;
     TIMER3_IMR_R |= 0x400;
     TIMER3_CTL_R |= 0x100;
