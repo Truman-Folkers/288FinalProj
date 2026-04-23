@@ -8,6 +8,7 @@
 //#include "cyBot_Scan.h"
 #include "Timer.h"
 #include "open_interface.h"
+#include "uart-interrupt.h"
 #include "movement.h"
 #include "string.h"
 #include <math.h>
@@ -22,6 +23,19 @@ volatile int smallest_object_num = 0;
 volatile int object_count = 0;
 volatile movement_cmd_t current_cmd = CMD_STOP;
 
+// Function to send a string to PuTTY one character at a time
+void sendString(int scale, char type )
+{
+    char sentString[5];
+    sprintf(sentString, "%d%c", scale, type);
+    int i = 0;
+    while (sentString[i] != '\0')
+    {
+        uart_sendChar(sentString[i]);
+        i++;
+    }
+}
+
 double move_forward(oi_t *sensor_data, double distance_mm)
 {
 
@@ -35,6 +49,7 @@ double move_forward(oi_t *sensor_data, double distance_mm)
         distance_moved = distance_moved + sensor_data->distance;
     }
 
+    sendString(((int)(distance_mm * 10)), 'f');
     oi_setWheels(0, 0);
     return distance_moved;
 }
@@ -52,6 +67,7 @@ double move_backward(oi_t *sensor_data, double distance_mm)
         distance_moved = distance_moved + sensor_data->distance;
     }
 
+    sendString(((int)(distance_mm * 10)), 'b');
     oi_setWheels(0, 0);
     return distance_moved;
 }
@@ -67,6 +83,8 @@ double turn_left(oi_t *sensor_data, double degrees)
         oi_update(sensor_data);
         angle_robot = angle_robot + sensor_data->angle;
     }
+
+    sendString((int)(degrees), 'l');
     oi_setWheels(0, 0);
     return degrees;
 }
@@ -83,6 +101,7 @@ double turn_right(oi_t *sensor_data, double degrees)
         oi_update(sensor_data);
         angle_robot = angle_robot + sensor_data->angle;
     }
+    sendString((int)(degrees), 'r');
     oi_setWheels(0, 0);
     return degrees;
 }
