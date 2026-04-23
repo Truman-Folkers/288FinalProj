@@ -157,8 +157,22 @@ void scan_and_map(oi_t *sensor_data)
         timer_waitMillis(100);
 
         ping_trigger();
-        while (g_state != DONE) {}
-        pingDist = ping_getDistance();
+
+        int timeout = 0;
+        while (g_state != DONE && timeout < 400000)
+        {
+            timeout++;
+        }
+
+        if (g_state != DONE)
+        {
+            g_state = LOW;
+            // handle bad reading
+        }
+        else
+        {
+            pingDist = ping_getDistance();
+        }
 
         for (k = 0; k < 3; k++)
         {
@@ -384,7 +398,7 @@ int main(void)
         else if (receivedChar == 'h')
         {
             sendString("\r\nDone!\r\n");
-            continue;
+            while(receivedChar == 'h'){receivedChar = returnChar;}
         }else{
             movement_update(sensor_data);
         }
