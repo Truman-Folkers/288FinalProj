@@ -49,7 +49,6 @@ double move_forward(oi_t *sensor_data, double distance_mm)
         distance_moved = distance_moved + sensor_data->distance;
     }
 
-    sendString(((int)(distance_mm * 10)), 'f');
     oi_setWheels(0, 0);
     return distance_moved;
 }
@@ -295,10 +294,12 @@ void movement_update(oi_t *sensor_data)
     {
     case CMD_FORWARD:
         oi_setWheels(150, 150);
+        sendString(((int)(distance_mm * 10)), 'f');
         break;
 
     case CMD_BACKWARD:
         oi_setWheels(-150, -150);
+        sendString(((int)(distance_mm * 10)), 'b');
         break;
 
     case CMD_LEFT:
