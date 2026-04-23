@@ -208,69 +208,69 @@ void movement_update(oi_t *sensor_data)
     while (robot_angle < -M_PI)
         robot_angle += 2 * M_PI;
 
-    // Handle bump sensors
-    if (sensor_data->bumpLeft)
-    {
-        oi_setWheels(0, 0);
-
-        turn_right(sensor_data, 90);
-        move_forward(sensor_data, 100);
-        turn_left(sensor_data, 90);
-        move_forward(sensor_data, 160);
-        turn_left(sensor_data, 90);
-        move_forward(sensor_data, 100);
-        turn_right(sensor_data, 90);
-
-        current_cmd = CMD_STOP;
-        return;
-    }
-    else if (sensor_data->bumpRight)
-    {
-        oi_setWheels(0, 0);
-
-        turn_left(sensor_data, 90);
-        move_forward(sensor_data, 100);
-        turn_right(sensor_data, 90);
-        move_forward(sensor_data, 160);
-        turn_right(sensor_data, 90);
-        move_forward(sensor_data, 100);
-        turn_left(sensor_data, 90);
-
-        current_cmd = CMD_STOP;
-        return;
-    }
-    int i;
-    // Check mapped objects
-    for (i = 0; i < object_count; i++)
-    {
-        if (i == smallest_object_num)
-        {
-            continue;
-        }
-
-        float object_x = map_x[i] - robot_x;
-        float object_y = map_y[i] - robot_y;
-
-        float distance2 = sqrt(object_x * object_x + object_y * object_y);
-
-        if (distance2 < 15)
-        {
-            float angle = atan2(object_y, object_x) - robot_angle;
-
-            while (angle > M_PI)
-                angle -= 2 * M_PI;
-            while (angle < -M_PI)
-                angle += 2 * M_PI;
-
-            if (fabs(angle) < (20 * M_PI / 180.0))
-            {
-                oi_setWheels(0, 0);
-                avoidObjects(sensor_data);
-                current_cmd = CMD_STOP;
-                return;
-            }
-        }
-    }
+//    // Handle bump sensors
+//    if (sensor_data->bumpLeft)
+//    {
+//        oi_setWheels(0, 0);
+//
+//        turn_right(sensor_data, 90);
+//        move_forward(sensor_data, 100);
+//        turn_left(sensor_data, 90);
+//        move_forward(sensor_data, 160);
+//        turn_left(sensor_data, 90);
+//        move_forward(sensor_data, 100);
+//        turn_right(sensor_data, 90);
+//
+//        current_cmd = CMD_STOP;
+//        return;
+//    }
+//    else if (sensor_data->bumpRight)
+//    {
+//        oi_setWheels(0, 0);
+//
+//        turn_left(sensor_data, 90);
+//        move_forward(sensor_data, 100);
+//        turn_right(sensor_data, 90);
+//        move_forward(sensor_data, 160);
+//        turn_right(sensor_data, 90);
+//        move_forward(sensor_data, 100);
+//        turn_left(sensor_data, 90);
+//
+//        current_cmd = CMD_STOP;
+//        return;
+//    }
+//    int i;
+//    // Check mapped objects
+//    for (i = 0; i < object_count; i++)
+//    {
+//        if (i == smallest_object_num)
+//        {
+//            continue;
+//        }
+//
+//        float object_x = map_x[i] - robot_x;
+//        float object_y = map_y[i] - robot_y;
+//
+//        float distance2 = sqrt(object_x * object_x + object_y * object_y);
+//
+//        if (distance2 < 15)
+//        {
+//            float angle = atan2(object_y, object_x) - robot_angle;
+//
+//            while (angle > M_PI)
+//                angle -= 2 * M_PI;
+//            while (angle < -M_PI)
+//                angle += 2 * M_PI;
+//
+//            if (fabs(angle) < (20 * M_PI / 180.0))
+//            {
+//                oi_setWheels(0, 0);
+//                avoidObjects(sensor_data);
+//                current_cmd = CMD_STOP;
+//                return;
+//            }
+//        }
+//    }
 
     switch (current_cmd)
     {

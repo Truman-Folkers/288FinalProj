@@ -236,6 +236,9 @@ def move_right():
 def move_left():
     if sock: sock.sendall(b'a')
 
+def stop():
+    if sock: sock.sendall(b'x')
+
 # ---- ray toggle state ----
 show_rays = True
 
@@ -258,6 +261,7 @@ tk.Button(btn_frame, text="↑ Forward",  command=move_forward,  **BTN_STYLE).pa
 tk.Button(btn_frame, text="↓ Backward", command=move_backward, **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
 tk.Button(btn_frame, text="→ Right",    command=move_right,    **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
 tk.Button(btn_frame, text="← Left",     command=move_left,     **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
+tk.Button(btn_frame, text="x Stop",     command=stop,     **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
 
 # ---- main content area: PanedWindow for resizable split ----
 paned = tk.PanedWindow(root, orient=tk.HORIZONTAL, bg="#0a0a1a",

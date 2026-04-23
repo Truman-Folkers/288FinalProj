@@ -50,6 +50,7 @@ char buffer[30];
 
 //cyBOT_Scan_t scanData;
 char receivedChar;
+char lastChar;
 int m;
 
 /*============================================= */
@@ -384,7 +385,9 @@ int main(void)
     {
 
         // Receiving interrupt char
-        receivedChar = returnChar;
+        while(receivedChar == lastChar){
+            receivedChar = returnChar;
+        }
 
         if (receivedChar == 'm')
         {
@@ -398,11 +401,10 @@ int main(void)
         else if (receivedChar == 'h')
         {
             sendString("\r\nDone!\r\n");
-            while(receivedChar == 'h'){receivedChar = returnChar;}
         }else{
             movement_update(sensor_data);
         }
-        // send directions to GUI
+        lastChar = recievedChar;
     }
     oi_free(sensor_data); // free memory
 }

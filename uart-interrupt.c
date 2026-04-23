@@ -178,6 +178,7 @@ void UART1_Handler(void)
                 break;
             default:
                 returnChar = (char)byte_received;
+                current_cmd = CMD_STOP;
                 break;
             }
                 }
