@@ -8,7 +8,9 @@
 
 #include <stdint.h>
 #include <inc/tm4c123gh6pm.h>
+#include <stdbool.h>
 #include "driverlib/interrupt.h"
+
 
 extern volatile uint32_t g_start_time;
 extern volatile uint32_t g_end_time;

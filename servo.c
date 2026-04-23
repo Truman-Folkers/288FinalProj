@@ -7,76 +7,73 @@
 
 #include "Timer.h"
 #include "lcd.h"
-#include "driverlib/interrupt.h"
 #include <stdint.h>
 #include <inc/tm4c123gh6pm.h>
 #include "servo.h"
 
-void servo_init(void){
+void servo_init(void)
+{
+    uint32_t period = 320000;
+    uint32_t pulse_width = 24000;   // about 90 degrees
+    uint32_t match_value = period - pulse_width;
 
-    //init timer 1, port B
+    // enable clock to Timer1 and Port B
     SYSCTL_RCGCTIMER_R |= 0x02;
     SYSCTL_RCGCGPIO_R |= 0x02;
 
-    //busy-waits for system clocks
-    while((SYSCTL_RCGCTIMER_R & 0x02) == 0) {};
-    while((SYSCTL_RCGCGPIO_R & 0x02) == 0) {};
+    // wait until peripherals are ready
+    while ((SYSCTL_PRTIMER_R & 0x02) == 0) {}
+    while ((SYSCTL_PRGPIO_R & 0x02) == 0) {}
 
-
-    //enable alt function on PB5
+    // configure PB5 for T1CCP1
     GPIO_PORTB_DEN_R |= 0x20;
+    GPIO_PORTB_DIR_R |= 0x20;
     GPIO_PORTB_AFSEL_R |= 0x20;
-    GPIO_PORTB_PCTL_R &= ~0x00F00000;
-    GPIO_PORTB_PCTL_R |= 0x00700000;
+    GPIO_PORTB_AMSEL_R &= ~0x20;
+    GPIO_PORTB_PCTL_R = (GPIO_PORTB_PCTL_R & ~0x00F00000) | 0x00700000;
 
-    //disables timer before initializing
+    // disable Timer1B before setup
     TIMER1_CTL_R &= ~0x00000100;
 
-    //Sets timer config to 16-bit
-    TIMER1_CFG_R = 0x04;
+    // 16-bit timer configuration
+    TIMER1_CFG_R = 0x4;
 
-    //sets timer mode to PWM, edge-count, periodic
-    TIMER1_TBMR_R &= ~0x00000014;
-    TIMER1_TBMR_R |= 0xA;
+    // Timer1B periodic PWM mode, count-down
+    TIMER1_TBMR_R = 0xA;
 
-
-    //Keeps output as-is (recommended by datasheet)
+    // non-inverted output
     TIMER1_CTL_R &= ~0x00004000;
 
-
-    //full clock cycle for PWM (20 ms)
-    uint32_t period = 320000;
-
-
-    //set clock value to period (2 ms)
+    // set 20 ms period
     TIMER1_TBPR_R = (period >> 16) & 0xFF;
-    TIMER1_TBILR_R = (period & 0xFFFF);
+    TIMER1_TBILR_R = period & 0xFFFF;
 
-    //enables timer
+    // set initial pulse width
+    TIMER1_TBPMR_R = (match_value >> 16) & 0xFF;
+    TIMER1_TBMATCHR_R = match_value & 0xFFFF;
+
+    // enable Timer1B
     TIMER1_CTL_R |= 0x00000100;
-
-
 }
 
-
-void servo_move(uint16_t degrees){
-
-    //convert degrees to pulse width (clock cycles)
-    uint32_t pulse_width = 16000 + ((16000 * degrees) / 180);
-
+void servo_move(uint16_t degrees)
+{
+    uint32_t pulse_width;
     uint32_t period = 320000;
+    uint32_t match_value;
 
-    //how long to stay HIGH
-    uint32_t match_value = period - pulse_width;
+    if (degrees > 180)
+    {
+        degrees = 180;
+    }
 
-    //upper 8 bits are stored
+    // 1 ms to 2 ms pulse over 0 to 180 degrees
+    pulse_width = 16000 + ((16000 * degrees) / 180);
+
+    match_value = period - pulse_width;
+
     TIMER1_TBPMR_R = (match_value >> 16) & 0xFF;
+    TIMER1_TBMATCHR_R = match_value & 0xFFFF;
 
-    //lower 16 bits stored
-    TIMER1_TBMATCHR_R = (match_value & 0xFFFF);
-
-
-    //delay so that the servo can move
-    timer_waitMillis(200); //might need to be dependent on the degrees
-
+    timer_waitMillis(200);
 }

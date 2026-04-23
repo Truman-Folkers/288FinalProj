@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <inc/tm4c123gh6pm.h>
 
+
 // Global shared variables
 // Use extern declarations in the header file
 

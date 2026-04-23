@@ -16,6 +16,7 @@
 #include "uart-interrupt.h"
 #include <stdbool.h>
 #include "driverlib/interrupt.h"
+#include "movement.h"
 
 // These variables are declared as examples for your use in the interrupt handler.
 volatile char command_byte = -1; // byte value for special character used as a command
@@ -46,7 +47,7 @@ void uart_interrupt_init(void)
     GPIO_PORTB_AFSEL_R |= 0x03;
 
     // enable UART1 Rx and Tx on port B pins
-    GPIO_PORTB_PCTL_R = 0x11;
+    GPIO_PORTB_PCTL_R = (GPIO_PORTB_PCTL_R & ~0x000000FF) | 0x00000011;
 
     // calculate baud rate
     uint16_t iBRD = 8;  // use equations

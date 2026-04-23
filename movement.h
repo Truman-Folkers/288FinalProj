@@ -10,7 +10,7 @@
 
 #include "open_interface.h"
 #include "movement.h"
-#include "cyBot_Scan.h"
+//#include "cyBot_Scan.h"
 
 extern volatile float map_x[10];
 extern volatile float map_y[10];
@@ -19,7 +19,7 @@ extern volatile float robot_y;
 extern volatile float robot_angle;
 extern volatile int object_count;
 extern volatile int smallest_object_num;
-extern volatile movement_cmd_t current_cmd;
+
 typedef enum
 {
    CMD_STOP,
@@ -28,6 +28,8 @@ typedef enum
    CMD_LEFT,
    CMD_RIGHT
 } movement_cmd_t;
+
+extern volatile movement_cmd_t current_cmd;
 
 double move_forward(oi_t *sensor_data, double distance_mm);
 double turn_left(oi_t *sensor_data, double degrees);

@@ -7,14 +7,15 @@
 #include <string.h>
 #include <stdlib.h>
 // #include "cyBot_uart.h"
-#include "cyBot_Scan.h"
+#include "servo.h" //cybotScan.h
 #include "lcd.h"
 #include "uart-interrupt.h"
 #include <math.h>
 #include "movement.h"
 #include "open_interface.h"
 #include "adc.h"
-#include "PINGLogAnalyzer.h"
+#include "ping_template.h"
+
 
 // variable initialization
 //  Object containment
@@ -28,7 +29,7 @@ struct object
     int peakIR;
 };
 
-cyBOT_Scan_t sensorVals[5];
+//cyBOT_Scan_t sensorVals[5];
 int irPrev = 0;
 int irAverage;
 int startingAngle = 0;
@@ -40,13 +41,14 @@ int inObjectCounter = 0;
 int peakIR = 0;
 int peakAngle = 0;
 int riseCount = 0;
-int angleTurnRate = 1;
+int angleTurnRate = 2;
 int fallCount = 0;
 int candidateStartAngle = 0;
 
 struct object objArr[10];
+char buffer[30];
 
-cyBOT_Scan_t scanData;
+//cyBOT_Scan_t scanData;
 char receivedChar;
 int m;
 
@@ -149,10 +151,19 @@ void scan_and_map(oi_t *sensor_data)
     {
 
         int irSum = 0;
+        float pingDist = 0.0;
+
+        servo_move(angle);
+        timer_waitMillis(100);
+
+        ping_trigger();
+        while (g_state != DONE) {}
+        pingDist = ping_getDistance();
+
         for (k = 0; k < 3; k++)
         {
-            cyBOT_Scan(angle, &scanData);
-            irSum += scanData.IR_raw_val;
+            irSum += adc_read();
+            timer_waitMillis(5);
         }
         irAverage = irSum / 3;
 
@@ -230,7 +241,7 @@ void scan_and_map(oi_t *sensor_data)
         irPrev = irAverage;
 
         // Sending data to GUI through socket
-        sprintf(buffer, "%d,%.2f,%d\n", angle, scanData.sound_dist, irAverage);
+        sprintf(buffer, "%d,%.2f,%d\n", angle, pingDist, irAverage);
 
         sendString(buffer);
 
@@ -257,15 +268,16 @@ void scan_and_map(oi_t *sensor_data)
         inObject = 0;
     }
 
-    // second scan for PING dist
     int i;
+    // second scan for PING dist
     for (i = 0; i < numObj; i++)
     {
-        cyBOT_Scan(objArr[i].angle, &scanData);
-        timer_waitMillis(500);
-        uint16_t adc = adc_read();
-        float dist = adc_to_cm(adc);
-        objArr[i].distance_cm = dist;
+        servo_move(objArr[i].angle);
+        timer_waitMillis(200);
+
+        ping_trigger();
+        while (g_state != DONE) {}
+        objArr[i].distance_cm = ping_getDistance();
     }
 
     int j;
@@ -333,7 +345,7 @@ int main(void)
     //    ObjectAnalyzer(log_data);
 
     // Initializing/Calibrating
-    char buffer[100];
+
     oi_t *sensor_data = oi_alloc(); // allocating memory for the data
     lcd_init();
     timer_init();
@@ -341,13 +353,16 @@ int main(void)
     oi_init(sensor_data);
     adc_init();
 
-    cyBOT_init_Scan(0b0111);
+//    cyBOT_init_Scan(0b0111);
 
     // Calibrate Servo
     // cyBOT_SERVO_cal();
 
-    right_calibration_value = 290500;
-    left_calibration_value = 1282750;
+//    right_calibration_value = 290500;
+//    left_calibration_value = 1282750;
+
+    servo_init();
+    ping_init();
 
     lcd_printf("Send 'm'");
 
@@ -369,9 +384,10 @@ int main(void)
         else if (receivedChar == 'h')
         {
             sendString("\r\nDone!\r\n");
-            break;
+            continue;
+        }else{
+            movement_update(sensor_data);
         }
-        movement_update(sensor_data);
         // send directions to GUI
     }
     oi_free(sensor_data); // free memory

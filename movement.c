@@ -5,7 +5,7 @@
  *      Author: ppetsche
  */
 
-#include "cyBot_Scan.h"
+//#include "cyBot_Scan.h"
 #include "Timer.h"
 #include "open_interface.h"
 #include "movement.h"
@@ -91,7 +91,7 @@ float object_distance[10];
 int object_angle[10];
 int object_width[10];
 
-float robot_angle = 0;
+
 
 double move_forward_two(oi_t *sensor_data, double distance_moved)
 {
@@ -239,7 +239,7 @@ void movement_update(oi_t *sensor_data)
         current_cmd = CMD_STOP;
         return;
     }
-
+    int i;
     // Check mapped objects
     for (i = 0; i < object_count; i++)
     {
