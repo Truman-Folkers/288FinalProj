@@ -15,10 +15,10 @@ MOVEMENT_SCALE = 1.0   # 1 unit on map = 1 cm; adjust once real scale is known
 # ============================================================
 # SOCKET SETUP  — comment back in when connected to robot
 # ============================================================
-#sock = None
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.connect((HOST, PORT))
-sock.setblocking(False)
+sock = None
+#sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#sock.connect((HOST, PORT))
+#sock.setblocking(False)
 
 recv_buffer = ""
 
@@ -226,15 +226,23 @@ def clear_graph():
 
 def move_forward():
     if sock: sock.sendall(b'w')
+    terminal.insert(tk.END, "Sent: w\n")
+    terminal.see(tk.END)
 
 def move_backward():
     if sock: sock.sendall(b's')
+    terminal.insert(tk.END, "Sent: s\n")
+    terminal.see(tk.END)
 
 def move_right():
     if sock: sock.sendall(b'd')
+    terminal.insert(tk.END, "Sent: d\n")
+    terminal.see(tk.END)
 
 def move_left():
     if sock: sock.sendall(b'a')
+    terminal.insert(tk.END, "Sent: a\n")
+    terminal.see(tk.END)
 
 def stop():
     if sock: sock.sendall(b'x')
@@ -545,7 +553,7 @@ def load_demo_scans():
             "ir_vals":   [d[2] for d in data],
         })
 
-#load_demo_scans()
+load_demo_scans()
 
 # ============================================================
 # START
