@@ -15,9 +15,13 @@
 #include <stdint.h>
 #include <inc/tm4c123gh6pm.h>
 
+//default for cal values, changed in main
+extern volatile uint32_t right_calibration_value;
+extern volatile uint32_t left_calibration_value;
 
 void servo_init(void);
 void servo_move(uint16_t degrees);
+void servo_calibrate(void);
 
 
 

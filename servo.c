@@ -11,6 +11,11 @@
 #include <inc/tm4c123gh6pm.h>
 #include "servo.h"
 
+//default for cal values, changed in main
+//defined as pulse width for 0 and 180, respectively
+volatile uint32_t right_calibration_value = 16000;
+volatile uint32_t left_calibration_value = 32000;
+
 void servo_init(void)
 {
     uint32_t period = 320000;
@@ -67,8 +72,9 @@ void servo_move(uint16_t degrees)
         degrees = 180;
     }
 
-    // 1 ms to 2 ms pulse over 0 to 180 degrees
-    pulse_width = 16000 + ((16000 * degrees) / 180);
+    //NEW! uses cal values from 0 and 180 pulse width
+    //creates a linear model for other pulse widths
+    pulse_width = right_calibration_value + (((left_calibration_value - right_calibration_value) * degrees) / 180);
 
     match_value = period - pulse_width;
 
@@ -76,4 +82,66 @@ void servo_move(uint16_t degrees)
     TIMER1_TBMATCHR_R = match_value & 0xFFFF;
 
     timer_waitMillis(200);
+}
+
+
+//NEW, TO CALIBRATE SERVO (must do after servo init)
+void servo_calibrate(){
+
+    //Turn on Port E timer
+    SYSCTL_RCGCGPIO_R |= 0x10;
+    while ((SYSCTL_PRGPIO_R & 0x10) == 0) {};
+
+    //Enable digital function for buttons and make them inputs
+    GPIO_PORTE_DIR_R &= 0xF0;
+    GPIO_PORTE_DEN_R |= 0x0F;
+
+    //start cal process
+    int angle = 90;
+    servo_move(angle);
+    lcd_printf("Finding right...");
+
+    //while button 4 isn't being pushed
+    while(GPIO_PORTE_DATA_R & 0x08 != 0){
+
+        //if button 2 is pushed, move right
+        if(GPIO_PORTE_DATA_R & 0x02 == 0){
+            servo_move(--angle);
+        }
+
+        //if button 1 is pushed, move left
+        else if(GPIO_PORTE_DATA_R 0x01 == 0){
+            servo_move(++angle);
+        }
+    }
+
+    //sets right calibration value, prints to lcd
+    int right = (TIMER1_TBPMR_R << 16) + TIMER1_TBMATCHR_R;
+    lcd_printf("Right: %i", right);
+    lcd_gotoLine(1);
+    lcd_printf("Press 3 to continue");
+
+
+    //waits until button 3 is pressed to continue
+    while(GPIO_PORTE_DATA_R & 0x04 != 0){};
+
+    lcd_printf("Finding left...");
+    
+    //while button 4 isn't being pushed
+    while(GPIO_PORTE_DATA_R & 0x08 != 0){
+
+        //if button 2 is pushed, move right
+        if(GPIO_PORTE_DATA_R & 0x02 == 0){
+            servo_move(--angle);
+        }
+
+        //if button 1 is pushed, move left
+        else if(GPIO_PORTE_DATA_R 0x01 == 0){
+            servo_move(++angle);
+        }
+    }
+
+    //sets left calibration value, prints to lcd
+    int left = (TIMER1_TBPMR_R << 16) + TIMER1_TBMATCHR_R;
+    lcd_printf("Left: %i", left);
 }
