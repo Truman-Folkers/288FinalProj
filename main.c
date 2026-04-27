@@ -405,7 +405,7 @@ int main(void)
         else if (receivedChar == 'h')
         {
             sendString("\r\nDone!\r\n");
-        }else if(recievedChar == 'n'){
+        }else if(receivedChar == 'n'){
             // 0-90 scan
             scanStartAngle = 0;
             scanEndAngle = 95;
@@ -415,7 +415,7 @@ int main(void)
             lcd_clear();
             lcd_printf("Done");
 
-        }else if(recievedChar == 'l'){
+        }else if(receivedChar == 'l'){
             // 90-180 scan
             scanStartAngle = 90;
             scanEndAngle = 180;

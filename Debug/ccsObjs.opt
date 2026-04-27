@@ -6,6 +6,7 @@
 "./movement.obj"
 "./open_interface.obj"
 "./ping_template.obj"
+"./sensor_test.obj"
 "./servo.obj"
 "./tm4c1230h6pm_startup_ccs.obj"
 "./uart-interrupt.obj"

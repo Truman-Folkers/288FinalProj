@@ -22,6 +22,8 @@ volatile float robot_angle = 0;
 volatile int smallest_object_num = 0;
 volatile int object_count = 0;
 volatile movement_cmd_t current_cmd = CMD_STOP;
+volatile int bumpLeftSensed = 0;
+volatile int bumpRightSensed = 0;
 
 // Function to send a string to PuTTY one character at a time
 //void sendString(int scale, char type )
@@ -210,6 +212,8 @@ void movement_update(oi_t *sensor_data)
 {
     float distance1;
     float angle1;
+    bumpLeftSensed = 0;
+    bumpRightSensed = 0;
     oi_update(sensor_data);
 
     distance1 = sensor_data->distance;
@@ -225,6 +229,15 @@ void movement_update(oi_t *sensor_data)
         robot_angle -= 2 * M_PI;
     while (robot_angle < -M_PI)
         robot_angle += 2 * M_PI;
+
+    if(sensor_data->bumpLeft){
+        current_cmd = CMD_STOP;
+        bumpLeftSensed = 1;
+    }
+    if(sensor_data->bumpRight){
+        current_cmd = CMD_STOP;
+        bumpRightSensed = 1;
+    }
 
 //    // Handle bump sensors
 //    if (sensor_data->bumpLeft)

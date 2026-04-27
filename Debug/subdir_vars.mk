@@ -17,6 +17,7 @@ C_SRCS += \
 ../movement.c \
 ../open_interface.c \
 ../ping_template.c \
+../sensor_test.c \
 ../servo.c \
 ../tm4c1230h6pm_startup_ccs.c \
 ../uart-interrupt.c 
@@ -30,6 +31,7 @@ C_DEPS += \
 ./movement.d \
 ./open_interface.d \
 ./ping_template.d \
+./sensor_test.d \
 ./servo.d \
 ./tm4c1230h6pm_startup_ccs.d \
 ./uart-interrupt.d 
@@ -43,6 +45,7 @@ OBJS += \
 ./movement.obj \
 ./open_interface.obj \
 ./ping_template.obj \
+./sensor_test.obj \
 ./servo.obj \
 ./tm4c1230h6pm_startup_ccs.obj \
 ./uart-interrupt.obj 
@@ -56,6 +59,7 @@ OBJS__QUOTED += \
 "movement.obj" \
 "open_interface.obj" \
 "ping_template.obj" \
+"sensor_test.obj" \
 "servo.obj" \
 "tm4c1230h6pm_startup_ccs.obj" \
 "uart-interrupt.obj" 
@@ -69,6 +73,7 @@ C_DEPS__QUOTED += \
 "movement.d" \
 "open_interface.d" \
 "ping_template.d" \
+"sensor_test.d" \
 "servo.d" \
 "tm4c1230h6pm_startup_ccs.d" \
 "uart-interrupt.d" 
@@ -82,6 +87,7 @@ C_SRCS__QUOTED += \
 "../movement.c" \
 "../open_interface.c" \
 "../ping_template.c" \
+"../sensor_test.c" \
 "../servo.c" \
 "../tm4c1230h6pm_startup_ccs.c" \
 "../uart-interrupt.c" 
