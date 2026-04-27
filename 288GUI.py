@@ -132,28 +132,20 @@ def apply_movements(start_x, start_y, start_heading, movements):
 # ============================================================
 scans = []   # list of Scan objects in order received
 
-def ingest_scan(movements, data):
+def ingest_scan(data):
     """
-    Create a new Scan from a movement list and sensor data, compute its
-    map position via dead reckoning, store it, and refresh the map.
+    Create a new Scan from the sensor data using the CURRENT live pose
+    as the scan's position.  Movements are now applied live as they arrive
+    (see apply_single_movement) so we just snapshot here.
 
     Parameters
     ----------
-    movements : list[str]
-        Movement commands since the previous scan, e.g. ["90r", "200f"].
-    data      : list[tuple]
+    data : list[tuple]
         Sensor readings as (angle_deg, ping_cm, ir_raw).
     """
     scan_number = len(scans) + 1
 
-    if scans:
-        prev = scans[-1]
-        x, y, heading = apply_movements(prev.x, prev.y, prev.heading, movements)
-    else:
-        # First scan: robot starts at origin facing up
-        x, y, heading = apply_movements(0.0, 0.0, 90.0, movements)
-
-    scan = Scan(scan_number, movements, data, x, y, heading)
+    scan = Scan(scan_number, [], data, live_x, live_y, live_heading)
     scans.append(scan)
     print(f"[INFO] Ingested {scan}")
     draw_map()
@@ -188,6 +180,47 @@ _active_ir_vals   = []
 
 
 # ============================================================
+# LIVE POSE
+# Updated immediately as each MOV: arrives, so the robot's position
+# on the map moves in real time.  When SCAN_END is received, this
+# pose is snapshotted as the position of the new Scan.
+# ============================================================
+live_x       = 0.0
+live_y       = 0.0
+live_heading = 90.0       # degrees: 0=right, 90=up
+_in_scan     = False      # True between SCAN_START and SCAN_END
+
+
+def apply_single_movement(cmd):
+    """
+    Apply ONE movement command (e.g. "20f", "5r") to the live pose
+    and trigger a redraw so the robot icon moves on the map immediately.
+    """
+    global live_x, live_y, live_heading
+    try:
+        value, direction = parse_movement(cmd)
+    except (ValueError, IndexError):
+        print(f"[WARNING] Could not parse movement command: '{cmd}'")
+        return
+
+    if direction == 'r':
+        live_heading -= value
+    elif direction == 'l':
+        live_heading += value
+    elif direction == 'f':
+        rad = math.radians(live_heading)
+        live_x += value * MOVEMENT_SCALE * math.cos(rad)
+        live_y += value * MOVEMENT_SCALE * math.sin(rad)
+    elif direction == 'b':
+        rad = math.radians(live_heading)
+        live_x -= value * MOVEMENT_SCALE * math.cos(rad)
+        live_y -= value * MOVEMENT_SCALE * math.sin(rad)
+
+    live_heading %= 360
+    draw_map()
+
+
+# ============================================================
 # GUI SETUP
 # ============================================================
 root = tk.Tk()
@@ -216,13 +249,18 @@ def stop_scan():
     terminal.see(tk.END)
 
 def clear_graph():
+    global live_x, live_y, live_heading
     scan_graph_data.clear()
     _active_angles.clear()
     _active_ping_vals.clear()
     _active_ir_vals.clear()
+    scans.clear()
+    # reset live pose back to origin
+    live_x, live_y, live_heading = 0.0, 0.0, 90.0
     ax1.clear(); ax2.clear()
     style_axes()
     graph_canvas.draw()
+    draw_map()
 
 def move_forward():
     if sock: sock.sendall(b'w')
@@ -357,6 +395,19 @@ def draw_map():
     map_ax.clear()
     style_map_ax()
 
+    # ---- always draw the LIVE robot marker (cyan triangle + heading arrow) ----
+    live_rad = math.radians(live_heading)
+    live_arrow_len = 20 * MOVEMENT_SCALE
+    map_ax.annotate("",
+        xy=(live_x + live_arrow_len * math.cos(live_rad),
+            live_y + live_arrow_len * math.sin(live_rad)),
+        xytext=(live_x, live_y),
+        arrowprops=dict(arrowstyle="->", color="#00ffff", lw=2),
+        zorder=10)
+    map_ax.scatter(live_x, live_y, color="#00ffff",
+                   s=80, zorder=11, edgecolors="#fff",
+                   linewidths=0.8, marker='^')
+
     if not scans:
         map_canvas.draw()
         return
@@ -479,7 +530,7 @@ def redraw_graphs():
 
 
 def update_data():
-    global recv_buffer
+    global recv_buffer, _in_scan
 
     if sock:
         try:
@@ -494,10 +545,60 @@ def update_data():
         while '\n' in recv_buffer:
             line, recv_buffer = recv_buffer.split('\n', 1)
             line = line.strip()
-            if line:
-                terminal.insert(tk.END, line + "\n")
+            if not line:
+                continue
+
+            terminal.insert(tk.END, line + "\n")
+            terminal.see(tk.END)
+
+            # --------------------------------------------------
+            # MOV: — robot finished a chunk of movement, apply
+            # immediately to the live pose so the map updates now.
+            # --------------------------------------------------
+            if line.startswith("MOV:"):
+                cmd = line[4:].strip()   # e.g. "20f", "5r"
+                apply_single_movement(cmd)
+                terminal.insert(tk.END, f"  [movement applied: {cmd}]\n")
                 terminal.see(tk.END)
 
+            # --------------------------------------------------
+            # SCAN_START — robot is beginning a scan
+            # --------------------------------------------------
+            elif line == "\r\nStarting Scan...\r\n":
+                _in_scan = True
+                _active_angles.clear()
+                _active_ping_vals.clear()
+                _active_ir_vals.clear()
+                terminal.insert(tk.END, "  [scan started]\n")
+                terminal.see(tk.END)
+
+            # --------------------------------------------------
+            # SCAN_END — scan complete, snapshot live pose into a Scan
+            # --------------------------------------------------
+            elif line == "SCAN_END":
+                _in_scan = False
+                if _active_angles:
+                    sensor_data = list(zip(
+                        _active_angles,
+                        _active_ping_vals,
+                        _active_ir_vals
+                    ))
+                    scan_graph_data.append({
+                        "angles":    list(_active_angles),
+                        "ping_vals": list(_active_ping_vals),
+                        "ir_vals":   list(_active_ir_vals),
+                    })
+                    ingest_scan(sensor_data)
+                    _active_angles.clear()
+                    _active_ping_vals.clear()
+                    _active_ir_vals.clear()
+                terminal.insert(tk.END, "  [scan ended]\n")
+                terminal.see(tk.END)
+
+            # --------------------------------------------------
+            # angle,ping,ir — sensor reading inside a scan
+            # --------------------------------------------------
+            else:
                 parts = line.split(',')
                 if len(parts) == 3:
                     try:
@@ -547,7 +648,9 @@ def load_demo_scans():
     ]
 
     for movements, data in demo_scans:
-        ingest_scan(movements, data)
+        for cmd in movements:
+            apply_single_movement(cmd)
+        ingest_scan(data)
         # also populate graph data so graphs show per-scan colors
         scan_graph_data.append({
             "angles":    [d[0] for d in data],

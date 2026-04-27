@@ -130,6 +130,7 @@ void scan_and_map(oi_t *sensor_data)
 {
     lcd_clear();
 
+
     numObj = 0;
     irPrev = 0;
     inObject = 0;
@@ -301,6 +302,7 @@ void scan_and_map(oi_t *sensor_data)
     if (numObj == 0)
     {
         sendString("\r\nNo objects found.\r\n");
+        sendStr("SCAN_END\n");
         return;
     }
     struct object smallestObj = objArr[0];
@@ -350,6 +352,9 @@ void scan_and_map(oi_t *sensor_data)
         map_x[m] = objArr[m].distance_cm * cos(angle2) + robot_x;
         map_y[m] = objArr[m].distance_cm * sin(angle2) + robot_y;
     }
+
+    /* Tell the GUI the scan is complete so it commits the readings. */
+    sendStr("SCAN_END\n");
 
     return;
 }
