@@ -38,6 +38,16 @@ void sendMovement(int scale, char type )
     }
 }
 
+void sendBump(int l, int r){
+    char sentString[5];
+    sprintf(sentString, "BUMP:%d%d", l, r);
+    while (sentString[i] != '\0')
+    {
+        uart_sendChar(sentString[i]);
+        i++;
+    }
+}
+
 double move_forward(oi_t *sensor_data, double distance_mm)
 {
 
@@ -239,6 +249,55 @@ void movement_update(oi_t *sensor_data)
         bumpRightSensed = 1;
     }
 
+    sendBump(bumpLeftSensed, bumpRightSensed);
+
+    /*
+     * Report this tick's deltas straight to the GUI.  No accumulation, no
+     * thresholds — Python handles whatever stream we send.  We do skip
+     * deltas that are below 1 (mm/deg) so we don't spam "MOV:0f" lines.
+     *
+     * We might have to fine tune it if the GUI is getting to many 0 updates that accumulate to to much.
+     *
+     * Sign convention: + distance = forward, - distance = backward;
+     *                  + angle    = left    (CCW),  - angle    = right.
+     */
+    int d_mm  = (int)sensor_data->distance;
+    int a_deg = (int)sensor_data->angle;
+
+    if (d_mm > 0)        sendMovement( d_mm, 'f');
+    else if (d_mm < 0)   sendMovement(-d_mm, 'b');
+
+    if (a_deg > 0)       sendMovement( a_deg, 'l');
+    else if (a_deg < 0)  sendMovement(-a_deg, 'r');
+
+    switch (current_cmd)
+    {
+    case CMD_FORWARD:
+        oi_setWheels(150, 150);
+//        sendString(((int)(distance_mm * 10)), 'f');
+        break;
+
+    case CMD_BACKWARD:
+        oi_setWheels(-150, -150);
+//        sendString(((int)(distance_mm * 10)), 'b');
+        break;
+
+    case CMD_LEFT:
+        turn_left(sensor_data, 90);
+        break;
+
+    case CMD_RIGHT:
+        turn_right(sensor_data, 90);
+        break;
+
+    case CMD_STOP:
+    default:
+        oi_setWheels(0, 0);
+        break;
+    }
+}
+
+
 //    // Handle bump sensors
 //    if (sensor_data->bumpLeft)
 //    {
@@ -302,49 +361,3 @@ void movement_update(oi_t *sensor_data)
 //            }
 //        }
 //    }
-
-    /*
-     * Report this tick's deltas straight to the GUI.  No accumulation, no
-     * thresholds — Python handles whatever stream we send.  We do skip
-     * deltas that are below 1 (mm/deg) so we don't spam "MOV:0f" lines.
-     * 
-     * We might have to fine tune it if the GUI is getting to many 0 updates that accumulate to to much.
-     *
-     * Sign convention: + distance = forward, - distance = backward;
-     *                  + angle    = left    (CCW),  - angle    = right.
-     */
-    int d_mm  = (int)sensor_data->distance;
-    int a_deg = (int)sensor_data->angle;
-
-    if (d_mm > 0)        sendMovement( d_mm, 'f');
-    else if (d_mm < 0)   sendMovement(-d_mm, 'b');
-
-    if (a_deg > 0)       sendMovement( a_deg, 'l');
-    else if (a_deg < 0)  sendMovement(-a_deg, 'r');
-
-    switch (current_cmd)
-    {
-    case CMD_FORWARD:
-        oi_setWheels(150, 150);
-//        sendString(((int)(distance_mm * 10)), 'f');
-        break;
-
-    case CMD_BACKWARD:
-        oi_setWheels(-150, -150);
-//        sendString(((int)(distance_mm * 10)), 'b');
-        break;
-
-    case CMD_LEFT:
-        turn_left(sensor_data, 90);
-        break;
-
-    case CMD_RIGHT:
-        turn_right(sensor_data, 90);
-        break;
-
-    case CMD_STOP:
-    default:
-        oi_setWheels(0, 0);
-        break;
-    }
-}
