@@ -27,7 +27,7 @@ volatile movement_cmd_t current_cmd = CMD_STOP;
 void sendMovement(int scale, char type )
 {
     char sentString[5];
-    sprintf(sentString, "%d%c", scale, type);
+    sprintf(sentString, "MOV:%d%c", scale, type);
     int i = 0;
     while (sentString[i] != '\0')
     {
