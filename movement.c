@@ -26,17 +26,17 @@ volatile int bumpLeftSensed = 0;
 volatile int bumpRightSensed = 0;
 
 // Function to send a string to PuTTY one character at a time
-//void sendString(int scale, char type )
-//{
-//    char sentString[5];
-//    sprintf(sentString, "%d%c", scale, type);
-//    int i = 0;
-//    while (sentString[i] != '\0')
-//    {
-//        uart_sendChar(sentString[i]);
-//        i++;
-//    }
-//}
+void sendMovement(int scale, char type )
+{
+    char sentString[5];
+    sprintf(sentString, "MOV:%d%c", scale, type);
+    int i = 0;
+    while (sentString[i] != '\0')
+    {
+        uart_sendChar(sentString[i]);
+        i++;
+    }
+}
 
 double move_forward(oi_t *sensor_data, double distance_mm)
 {
@@ -68,7 +68,7 @@ double move_backward(oi_t *sensor_data, double distance_mm)
         distance_moved = distance_moved + sensor_data->distance;
     }
 
-    sendString(((int)(distance_mm * 10)), 'b');
+    sendMovement(((int)(distance_mm * 10)), 'b');
     oi_setWheels(0, 0);
     return distance_moved;
 }
@@ -85,7 +85,7 @@ double turn_left(oi_t *sensor_data, double degrees)
         angle_robot = angle_robot + sensor_data->angle;
     }
 
-    sendString((int)(degrees), 'l');
+    sendMovement((int)(degrees), 'l');
     oi_setWheels(0, 0);
     return degrees;
 }
@@ -102,7 +102,7 @@ double turn_right(oi_t *sensor_data, double degrees)
         oi_update(sensor_data);
         angle_robot = angle_robot + sensor_data->angle;
     }
-    sendString((int)(degrees), 'r');
+    sendMovement((int)(degrees), 'r');
     oi_setWheels(0, 0);
     return degrees;
 }
@@ -302,6 +302,25 @@ void movement_update(oi_t *sensor_data)
 //            }
 //        }
 //    }
+
+    /*
+     * Report this tick's deltas straight to the GUI.  No accumulation, no
+     * thresholds — Python handles whatever stream we send.  We do skip
+     * deltas that are below 1 (mm/deg) so we don't spam "MOV:0f" lines.
+     * 
+     * We might have to fine tune it if the GUI is getting to many 0 updates that accumulate to to much.
+     *
+     * Sign convention: + distance = forward, - distance = backward;
+     *                  + angle    = left    (CCW),  - angle    = right.
+     */
+    int d_mm  = (int)sensor_data->distance;
+    int a_deg = (int)sensor_data->angle;
+
+    if (d_mm > 0)        sendMovement( d_mm, 'f');
+    else if (d_mm < 0)   sendMovement(-d_mm, 'b');
+
+    if (a_deg > 0)       sendMovement( a_deg, 'l');
+    else if (a_deg < 0)  sendMovement(-a_deg, 'r');
 
     switch (current_cmd)
     {
