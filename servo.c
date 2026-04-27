@@ -110,7 +110,7 @@ void servo_calibrate(){
         }
 
         //if button 1 is pushed, move left
-        else if(GPIO_PORTE_DATA_R 0x01 == 0){
+        else if((GPIO_PORTE_DATA_R & 0x01) == 0){
             servo_move(++angle);
         }
     }
@@ -136,7 +136,7 @@ void servo_calibrate(){
         }
 
         //if button 1 is pushed, move left
-        else if(GPIO_PORTE_DATA_R 0x01 == 0){
+        else if((GPIO_PORTE_DATA_R & 0x01) == 0){
             servo_move(++angle);
         }
     }

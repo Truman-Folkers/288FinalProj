@@ -302,7 +302,7 @@ void scan_and_map(oi_t *sensor_data)
     if (numObj == 0)
     {
         sendString("\r\nNo objects found.\r\n");
-        sendStr("SCAN_END\n");
+        sendString("SCAN_END\n");
         return;
     }
     struct object smallestObj = objArr[0];
@@ -354,7 +354,7 @@ void scan_and_map(oi_t *sensor_data)
     }
 
     /* Tell the GUI the scan is complete so it commits the readings. */
-    sendStr("SCAN_END\n");
+    sendString("SCAN_END\n");
 
     return;
 }

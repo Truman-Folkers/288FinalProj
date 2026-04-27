@@ -18,6 +18,7 @@ ORDERED_OBJS += \
 "./movement.obj" \
 "./open_interface.obj" \
 "./ping_template.obj" \
+"./sensor_test.obj" \
 "./servo.obj" \
 "./tm4c1230h6pm_startup_ccs.obj" \
 "./uart-interrupt.obj" \
@@ -152,8 +153,8 @@ all: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
 # Other Targets
 clean:
 	-$(RM) $(EXE_OUTPUTS__QUOTED)
-	-$(RM) "Timer.obj" "adc.obj" "lab7_template3.obj" "lcd.obj" "main.obj" "movement.obj" "open_interface.obj" "ping_template.obj" "servo.obj" "tm4c1230h6pm_startup_ccs.obj" "uart-interrupt.obj" 
-	-$(RM) "Timer.d" "adc.d" "lab7_template3.d" "lcd.d" "main.d" "movement.d" "open_interface.d" "ping_template.d" "servo.d" "tm4c1230h6pm_startup_ccs.d" "uart-interrupt.d" 
+	-$(RM) "Timer.obj" "adc.obj" "lab7_template3.obj" "lcd.obj" "main.obj" "movement.obj" "open_interface.obj" "ping_template.obj" "sensor_test.obj" "servo.obj" "tm4c1230h6pm_startup_ccs.obj" "uart-interrupt.obj" 
+	-$(RM) "Timer.d" "adc.d" "lab7_template3.d" "lcd.d" "main.d" "movement.d" "open_interface.d" "ping_template.d" "sensor_test.d" "servo.d" "tm4c1230h6pm_startup_ccs.d" "uart-interrupt.d" 
 	-@echo 'Finished clean'
 	-@echo ' '
 
