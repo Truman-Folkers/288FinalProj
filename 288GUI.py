@@ -215,6 +215,18 @@ def stop_scan():
     terminal.insert(tk.END, "Sent: h\n")
     terminal.see(tk.END)
 
+def start_zero_to_ninety_scan():
+    if sock:
+        sock.sendall(b'n')
+    terminal.insert(tk.END, "Sent: m\n")
+    terminal.see(tk.END)
+
+def start_ninety_to_oneeighty_scan():
+    if sock:
+        sock.sendall(b'l')
+    terminal.insert(tk.END, "Sent: m\n")
+    terminal.see(tk.END)
+
 def clear_graph():
     scan_graph_data.clear()
     _active_angles.clear()
@@ -262,6 +274,8 @@ def toggle_rays():
     draw_map()
 
 tk.Button(btn_frame, text="Start Scan",  command=start_scan,  **BTN_STYLE).pack(side=tk.LEFT, padx=3)
+tk.Button(btn_frame, text="Start 0-90 Scan",  command=start_zero_to_ninety_scan,  **BTN_STYLE).pack(side=tk.LEFT, padx=3)
+tk.Button(btn_frame, text="Start 90-180 Scan",  command=start_ninety_to_oneeighty_scan,  **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Stop Scan",   command=stop_scan,   **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Clear Graph", command=clear_graph, **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 ray_btn = tk.Button(btn_frame, text="Rays: ON", command=toggle_rays,

@@ -44,6 +44,8 @@ int riseCount = 0;
 int angleTurnRate = 2;
 int fallCount = 0;
 int candidateStartAngle = 0;
+int scanStartAngle = 0;
+int scanEndAngle = 180;
 
 struct object objArr[10];
 char buffer[30];
@@ -148,7 +150,7 @@ void scan_and_map(oi_t *sensor_data)
 
     int angle;
 
-    for (angle = 0; angle <= 180; angle += angleTurnRate)
+    for (angle = scanStartAngle; angle <= scanEndAngle; angle += angleTurnRate)
     {
 
         int irSum = 0;
@@ -392,6 +394,8 @@ int main(void)
         if (receivedChar == 'm')
         {
             // scan and map environment
+            scanStartAngle = 0;
+            scanEndAngle = 180;
             scan_and_map(sensor_data);
 
             sendString("\r\nScan Complete\r\n");
@@ -401,6 +405,26 @@ int main(void)
         else if (receivedChar == 'h')
         {
             sendString("\r\nDone!\r\n");
+        }else if(recievedChar == 'n'){
+            // 0-90 scan
+            scanStartAngle = 0;
+            scanEndAngle = 95;
+            scan_and_map(sensor_data);
+
+            sendString("\r\nScan Complete\r\n");
+            lcd_clear();
+            lcd_printf("Done");
+
+        }else if(recievedChar == 'l'){
+            // 90-180 scan
+            scanStartAngle = 90;
+            scanEndAngle = 180;
+            scan_and_map(sensor_data);
+
+            sendString("\r\nScan Complete\r\n");
+            lcd_clear();
+            lcd_printf("Done");
+
         }else{
             movement_update(sensor_data);
         }
