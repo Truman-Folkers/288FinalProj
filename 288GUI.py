@@ -661,6 +661,29 @@ def load_demo_scans():
 # load_demo_scans()
 
 # ============================================================
+# KEYBOARD BINDINGS
+# ============================================================
+def on_key_press(event):
+    key = event.keysym.lower()
+    if key == 'w':
+        move_forward()
+    elif key == 's':
+        move_backward()
+    elif key == 'a':
+        move_left()
+    elif key == 'd':
+        move_right()
+    elif key == 'x' or key == 'space':
+        stop()
+    elif key == 'm':
+        start_scan()
+    elif key == 'h':
+        stop_scan()
+
+root.bind("<KeyPress>", on_key_press)
+root.focus_set()  # ensures the root window captures key events
+
+# ============================================================
 # START
 # ============================================================
 update_data()
