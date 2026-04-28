@@ -189,6 +189,8 @@ live_x       = 0.0
 live_y       = 0.0
 live_heading = 90.0       # degrees: 0=right, 90=up
 _in_scan     = False      # True between SCAN_START and SCAN_END
+bump_left  = 0
+bump_right = 0
 
 
 def apply_single_movement(cmd):
@@ -421,6 +423,25 @@ def draw_map():
     map_ax.scatter(live_x, live_y, color="#00ffff",
                    s=80, zorder=11, edgecolors="#fff",
                    linewidths=0.8, marker='^')
+    
+    # ---- bump visualization (red flash / markers) ----
+    if bump_left or bump_right:
+        color = "#ff0000" if (bump_left and bump_right) else "#ffaa00"
+
+        map_ax.scatter(live_x, live_y,
+                    color=color,
+                    s=140,
+                    zorder=12,
+                    alpha=0.6)
+
+        # optional directional indicators
+        offset = 10
+        if bump_left:
+            map_ax.text(live_x - offset, live_y,
+                        "L", color="#ff4444", fontsize=10, zorder=13)
+        if bump_right:
+            map_ax.text(live_x + offset, live_y,
+                        "R", color="#ff4444", fontsize=10, zorder=13)
 
     if not scans:
         map_canvas.draw()
@@ -608,6 +629,26 @@ def update_data():
                     _active_ir_vals.clear()
                 terminal.insert(tk.END, "  [scan ended]\n")
                 terminal.see(tk.END)
+            
+            # --------------------------------------------------
+            # BUMP: — bump sensor update from robot
+            # --------------------------------------------------
+            elif line.startswith("BUMP:"):
+                data = line[5:].strip()   # gets "10", "01", etc.
+
+                if len(data) >= 2:
+                    try:
+                        global bump_left, bump_right
+                        bump_left  = int(data[0])
+                        bump_right = int(data[1])
+
+                        terminal.insert(tk.END, f"  [bump L:{bump_left} R:{bump_right}]\n")
+                        terminal.see(tk.END)
+
+                        draw_map()   # update visualization immediately
+
+                    except ValueError:
+                        print(f"[WARNING] Bad BUMP data: {line}")
 
             # --------------------------------------------------
             # angle,ping,ir — sensor reading inside a scan
