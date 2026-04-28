@@ -407,6 +407,7 @@ int main(void)
             sendString("\r\nScan Complete\r\n");
             lcd_clear();
             lcd_printf("Done");
+            returnChar = ' ';
         }
         else if (receivedChar == 'h')
         {
@@ -420,6 +421,7 @@ int main(void)
             sendString("\r\nScan Complete\r\n");
             lcd_clear();
             lcd_printf("Done");
+            returnChar = ' ';
 
         }else if(receivedChar == 'l'){
             // 90-180 scan
@@ -430,11 +432,13 @@ int main(void)
             sendString("\r\nScan Complete\r\n");
             lcd_clear();
             lcd_printf("Done");
+            returnChar = ' ';
 
         }else{
             movement_update(sensor_data);
         }
         lastChar = receivedChar;
+
     }
     oi_free(sensor_data); // free memory
 }
