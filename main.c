@@ -412,6 +412,7 @@ int main(void)
         else if (receivedChar == 'h')
         {
             sendString("\r\nDone!\r\n");
+            returnChar = ' ';
         }else if(receivedChar == 'n'){
             // 0-90 scan
             scanStartAngle = 0;

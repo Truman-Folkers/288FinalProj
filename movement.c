@@ -28,7 +28,7 @@ volatile int bumpRightSensed = 0;
 // Function to send a string to PuTTY one character at a time
 void sendMovement(int scale, char type )
 {
-    char sentString[5];
+    char sentString[16];
     sprintf(sentString, "\nMOV:%d%c", scale, type);
     int i = 0;
     while (sentString[i] != '\0')
@@ -39,14 +39,14 @@ void sendMovement(int scale, char type )
 }
 
 void sendBump(int l, int r){
-    char sentString[5];
+    char sentString[16];
     sprintf(sentString, "\nBUMP:%d%d", l, r);
     int i = 0;
-//    while (sentString[i] != '\0')
-//    {
-//        uart_sendChar(sentString[i]);
-//        i++;
-//    }
+    while (sentString[i] != '\0')
+    {
+        uart_sendChar(sentString[i]);
+        i++;
+    }
 }
 
 double move_forward(oi_t *sensor_data, double distance_mm)
@@ -249,8 +249,11 @@ void movement_update(oi_t *sensor_data)
         current_cmd = CMD_STOP;
         bumpRightSensed = 1;
     }
+    if(bumpRightSensed || bumpLeftSensed){
+        sendBump(bumpLeftSensed, bumpRightSensed);
+    }
 
-//    sendBump(bumpLeftSensed, bumpRightSensed);
+
 
     /*
      * Report this tick's deltas straight to the GUI.  No accumulation, no
