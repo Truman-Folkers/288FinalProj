@@ -285,10 +285,12 @@ void movement_update(oi_t *sensor_data)
 
     case CMD_LEFT:
         turn_left(sensor_data, 90);
+        current_cmd = CMD_STOP;
         break;
 
     case CMD_RIGHT:
         turn_right(sensor_data, 90);
+        current_cmd = CMD_STOP;
         break;
 
     case CMD_STOP:
