@@ -29,7 +29,7 @@ volatile int bumpRightSensed = 0;
 void sendMovement(int scale, char type )
 {
     char sentString[5];
-    sprintf(sentString, "MOV:%d%c", scale, type);
+    sprintf(sentString, "\nMOV:%d%c", scale, type);
     int i = 0;
     while (sentString[i] != '\0')
     {
@@ -40,12 +40,13 @@ void sendMovement(int scale, char type )
 
 void sendBump(int l, int r){
     char sentString[5];
-    sprintf(sentString, "BUMP:%d%d", l, r);
-    while (sentString[i] != '\0')
-    {
-        uart_sendChar(sentString[i]);
-        i++;
-    }
+    sprintf(sentString, "\nBUMP:%d%d", l, r);
+    int i = 0;
+//    while (sentString[i] != '\0')
+//    {
+//        uart_sendChar(sentString[i]);
+//        i++;
+//    }
 }
 
 double move_forward(oi_t *sensor_data, double distance_mm)
@@ -249,7 +250,7 @@ void movement_update(oi_t *sensor_data)
         bumpRightSensed = 1;
     }
 
-    sendBump(bumpLeftSensed, bumpRightSensed);
+//    sendBump(bumpLeftSensed, bumpRightSensed);
 
     /*
      * Report this tick's deltas straight to the GUI.  No accumulation, no

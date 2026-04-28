@@ -392,9 +392,10 @@ int main(void)
     {
 
         // Receiving interrupt char
-        while(receivedChar == lastChar){
-            receivedChar = returnChar;
-        }
+//        while(receivedChar == lastChar){
+//            receivedChar = returnChar;
+//        }
+        receivedChar = returnChar;
 
         if (receivedChar == 'm')
         {
