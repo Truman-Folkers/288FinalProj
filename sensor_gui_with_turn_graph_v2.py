@@ -5,17 +5,14 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import math
 import time
-
+import re
 
 # ============================================================
 # CONSTANTS  — edit these as needed
 # ============================================================
 HOST = "192.168.1.1"
 PORT = 288
-MOVEMENT_SCALE = 0.125  # 1 unit on map = 1 cm; adjust once real scale is known
-
-last_sent = {}
-COMMAND_COOLDOWN = 0.08  # seconds
+MOVEMENT_SCALE = 0.1    # Robot MOV distance is millimeters; map units are centimeters.
 
 # ============================================================
 # FIELD DIMENSIONS  — fixed arena size in cm
@@ -30,6 +27,7 @@ FIELD_H = 243   # cm — vertical   (Y axis, 0 at top, -FIELD_H at bottom)
 
 # Distance from any wall (cm) that triggers the 'o' warning to the robot
 OOB_THRESHOLD = 15   # cm
+SEND_OOB_WARNING_TO_ROBOT = False  # Keep False: firmware uses 'o' for LEFT_90.
 
 # ============================================================
 # ADC SENSOR ANGLES  — degrees relative to robot heading
@@ -66,6 +64,19 @@ sock.connect((HOST, PORT))
 sock.setblocking(False)
 
 recv_buffer = ""
+
+# Keep True if you want the map to move immediately when you click buttons.
+# Set False after firmware MOV: telemetry is stable to avoid double-counting.
+LOCAL_DEAD_RECKONING_ON_BUTTON_PRESS = True
+
+# Debounce repeated/overlapping keypresses so a held key does not spam UART.
+COMMAND_COOLDOWN = 0.08  # seconds
+_last_sent = {}
+
+# Continuous turns do not have a known angle locally, so the GUI should not
+# rotate the map for move_left()/move_right() unless the robot sends MOV:<angle>l/r.
+# The fixed 90-degree functions below do have known angles and can update the map.
+
 
 # ============================================================
 # SCAN CLASS
@@ -149,10 +160,38 @@ class ColEvent:
 # DEAD RECKONING
 # ============================================================
 def parse_movement(cmd):
+    """
+    Strictly parse a clean movement command like: 12f, 3r, 90l, 4b.
+    Returns (value, direction).
+    """
     cmd = cmd.strip().lower()
-    direction = cmd[-1]
-    value = float(cmd[:-1])
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([fblr])", cmd)
+    if not m:
+        raise ValueError(f"Bad movement command: {cmd!r}")
+    value = float(m.group(1))
+    direction = m.group(2)
     return value, direction
+
+
+def extract_movement_from_packet(packet):
+    """
+    Recover the first valid movement from a possibly polluted MOV payload.
+
+    Examples caused by command echo overlap:
+      '2rw' -> '2r'
+      '6fx' -> '6f'
+      '2fo' -> '2f'
+      '1bw' -> '1b'
+
+    This makes the GUI tolerant, but the better C-side fix is still:
+      1) stop echoing received command bytes
+      2) end MOV packets with \r\n
+    """
+    packet = packet.strip().lower()
+    m = re.search(r"(\d+(?:\.\d+)?)([fblr])", packet)
+    if not m:
+        return None
+    return m.group(1) + m.group(2)
 
 
 def apply_movements(start_x, start_y, start_heading, movements):
@@ -237,35 +276,37 @@ _oob_warning_sent = False  # True while robot is within OOB_THRESHOLD of a wall
 def _check_bounds():
     """
     Called after every live pose update.
-    - If the robot is within OOB_THRESHOLD of any wall, send 'o' once.
-    - Resets the sent-flag when the robot moves back into safe territory.
+    Warns in the GUI when the estimated robot position is near a wall.
+
+    IMPORTANT:
+    This does NOT send b'o' to the robot anymore because your firmware uses
+    'o' as the LEFT_90 command. Sending b'o' here can accidentally turn the robot.
     """
     global _oob_warning_sent
     near = (live_x < OOB_THRESHOLD or
             live_x > FIELD_W - OOB_THRESHOLD or
-            live_y > OOB_THRESHOLD or           # Y=0 is top wall
+            live_y > OOB_THRESHOLD or
             live_y < -(FIELD_H - OOB_THRESHOLD))
 
     if near and not _oob_warning_sent:
-        if sock:
+        if SEND_OOB_WARNING_TO_ROBOT and sock:
             try:
-                sock.sendall(b'o')
+                # Use a byte your firmware ignores, not 'o'.
+                sock.sendall(b'!')
             except Exception:
                 pass
-        terminal.insert(tk.END, "  [WARNING] Near boundary — sent: o\n")
+        terminal.insert(tk.END, "  [WARNING] Near boundary on map\n")
         terminal.see(tk.END)
         _oob_warning_sent = True
     elif not near and _oob_warning_sent:
-        _oob_warning_sent = False   # reset so we warn again next time
+        _oob_warning_sent = False
 
 
 def apply_single_movement(cmd):
     global live_x, live_y, live_heading
-    try:
-        value, direction = parse_movement(cmd)
-    except (ValueError, IndexError):
-        print(f"[WARNING] Could not parse movement command: '{cmd}'")
-        return
+
+    value, direction = parse_movement(cmd)
+
     if direction == 'r':
         live_heading -= value
     elif direction == 'l':
@@ -278,9 +319,16 @@ def apply_single_movement(cmd):
         rad = math.radians(live_heading)
         live_x -= value * MOVEMENT_SCALE * math.cos(rad)
         live_y -= value * MOVEMENT_SCALE * math.sin(rad)
+
     live_heading %= 360
     _check_bounds()
     draw_map()
+    return True
+
+
+def terminal_log(msg):
+    terminal.insert(tk.END, msg)
+    terminal.see(tk.END)
 
 
 # ============================================================
@@ -300,20 +348,16 @@ BTN_STYLE = dict(bg="#16213e", fg="#e0e0e0", activebackground="#0f3460",
                  font=("Courier New", 9, "bold"), padx=8, pady=3)
 
 def start_scan():
-    if sock: sock.sendall(b'm')
-    terminal.insert(tk.END, "Sent: m\n"); terminal.see(tk.END)
+    _send_command(b'm', 'm')
 
 def stop_scan():
-    if sock: sock.sendall(b'h')
-    terminal.insert(tk.END, "Sent: h\n"); terminal.see(tk.END)
+    _send_command(b'h', 'h')
 
 def start_zero_to_ninety_scan():
-    if sock: sock.sendall(b'n')
-    terminal.insert(tk.END, "Sent: n\n"); terminal.see(tk.END)
+    _send_command(b'n', 'n')
 
 def start_ninety_to_oneeighty_scan():
-    if sock: sock.sendall(b'l')
-    terminal.insert(tk.END, "Sent: l\n"); terminal.see(tk.END)
+    _send_command(b'l', 'l')
 
 def clear_graph():
     global live_x, live_y, live_heading, _oob_warning_sent
@@ -325,34 +369,85 @@ def clear_graph():
     ax1.clear(); ax2.clear()
     style_axes(); graph_canvas.draw(); draw_map()
 
+def _send_command(byte_cmd, label, local_movement=None):
+    """
+    Send exactly one command byte to the robot.
+
+    Do NOT add '\n'. Your TM4C interrupt handler expects single-character
+    commands like w/s/a/d/x/m/h/n/l/o/p. Newlines can hit the default case
+    in the ISR and stop the robot.
+    """
+    now = time.time()
+
+    # Always allow stop through immediately. Debounce everything else.
+    if label != 'x':
+        last = _last_sent.get(label, 0)
+        if now - last < COMMAND_COOLDOWN:
+            return
+        _last_sent[label] = now
+
+    try:
+        if sock is None:
+            terminal_log(f"[ERROR] Socket is None. Could not send: {label}\n")
+            return
+
+        # Temporarily use blocking mode so one-byte commands leave cleanly.
+        sock.setblocking(True)
+        sock.sendall(byte_cmd)
+        sock.setblocking(False)
+
+        terminal_log(f"Sent byte: {byte_cmd!r} ({label})\n")
+
+    except Exception as e:
+        terminal_log(f"[SEND ERROR] {label}: {e}\n")
+        try:
+            if sock:
+                sock.setblocking(False)
+        except Exception:
+            pass
+        return
+
+    if LOCAL_DEAD_RECKONING_ON_BUTTON_PRESS and local_movement:
+        try:
+            apply_single_movement(local_movement)
+            terminal_log(f"  [local movement applied: {local_movement}]\n")
+        except ValueError as e:
+            terminal_log(f"  [local movement ignored: {e}]\n")
+
+
 def move_forward():
-    if sock: sock.sendall(b'w')
-    terminal.insert(tk.END, "Sent: w\n"); terminal.see(tk.END)
+    # Keep this distance synced with whatever the robot firmware does for 'w'.
+    _send_command(b'w', 'w', '50f')
+
 
 def move_backward():
-    if sock: sock.sendall(b's')
-    terminal.insert(tk.END, "Sent: s\n"); terminal.see(tk.END)
+    # Keep this distance synced with whatever the robot firmware does for 's'.
+    _send_command(b's', 's', '50b')
+
 
 def move_right():
-    if sock: sock.sendall(b'd')
-    terminal.insert(tk.END, "Sent: d\n"); terminal.see(tk.END)
+    # Continuous right turn: send only. The GUI cannot know the angle unless
+    # the robot sends back something like MOV:12r or MOV:90r.
+    _send_command(b'd', 'd')
+
 
 def move_left():
-    if sock: sock.sendall(b'a')
-    terminal.insert(tk.END, "Sent: a\n"); terminal.see(tk.END)
+    # Continuous left turn: send only. The GUI cannot know the angle unless
+    # the robot sends back something like MOV:12l or MOV:90l.
+    _send_command(b'a', 'a')
+
 
 def turn_right_90():
-    if sock: sock.sendall(b'p')
-    terminal.insert(tk.END, "Sent: a\n"); terminal.see(tk.END)
+    # Fixed 90-degree right turn: safe to dead-reckon on the map.
+    _send_command(b'p', 'p')
+
 
 def turn_left_90():
-    if sock: sock.sendall(b'o')
-    terminal.insert(tk.END, "Sent: a\n"); terminal.see(tk.END)
-
+    # Fixed 90-degree left turn: safe to dead-reckon on the map.
+    _send_command(b'o', 'o')
 
 def stop():
-    if sock: sock.sendall(b'x')
-    terminal.insert(tk.END, "Sent: x\n"); terminal.see(tk.END)
+    _send_command(b'x', 'x')
 
 tk.Button(btn_frame, text="Start Scan",        command=start_scan,                     **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Start 0-90 Scan",   command=start_zero_to_ninety_scan,      **BTN_STYLE).pack(side=tk.LEFT, padx=3)
@@ -600,7 +695,7 @@ def draw_map():
 
     # live robot marker
     live_rad       = math.radians(live_heading)
-    live_arrow_len = 20 * MOVEMENT_SCALE
+    live_arrow_len = 20  # cm
     map_ax.annotate("",
         xy=(live_x + live_arrow_len * math.cos(live_rad),
             live_y + live_arrow_len * math.sin(live_rad)),
@@ -661,7 +756,7 @@ def draw_map():
         for angle_deg, ping_cm, ir_raw in scan.data:
             world_angle = math.radians(scan.heading + (angle_deg - 90))
 
-            ray_len = min(ping_cm, MAX_PING_RAY) * MOVEMENT_SCALE
+            ray_len = min(ping_cm, MAX_PING_RAY)  # ping_cm is already centimeters
             ex = scan.x + ray_len * math.cos(world_angle)
             ey = scan.y + ray_len * math.sin(world_angle)
             ping_ex.append(ex); ping_ey.append(ey)
@@ -686,7 +781,7 @@ def draw_map():
                            s=3, alpha=0.5, zorder=3, linewidths=0)
 
         # heading arrow
-        arrow_len = 15 * MOVEMENT_SCALE
+        arrow_len = 15  # cm
         hdg_rad   = math.radians(scan.heading)
         map_ax.annotate("",
             xy=(scan.x + arrow_len * math.cos(hdg_rad),
@@ -787,10 +882,20 @@ def update_data():
 
             # MOV:
             if line.startswith("MOV:"):
-                cmd = line[4:].strip()
-                apply_single_movement(cmd)
-                terminal.insert(tk.END, f"  [movement applied: {cmd}]\n")
-                terminal.see(tk.END)
+                raw_cmd = line[4:].strip()
+                clean_cmd = extract_movement_from_packet(raw_cmd)
+
+                if clean_cmd is None:
+                    terminal_log(f"  [ignored bad MOV packet: {raw_cmd!r}]\n")
+                else:
+                    try:
+                        apply_single_movement(clean_cmd)
+                        if clean_cmd != raw_cmd:
+                            terminal_log(f"  [movement applied: {clean_cmd} from noisy packet {raw_cmd!r}]\n")
+                        else:
+                            terminal_log(f"  [movement applied: {clean_cmd}]\n")
+                    except ValueError as e:
+                        terminal_log(f"  [ignored bad MOV packet: {raw_cmd!r}; {e}]\n")
 
             # COL: — ADC sensor reading
             # Format: COL:<sensor_id>,<adc_value>  e.g. "COL:2,1540"
@@ -855,6 +960,10 @@ def update_data():
 
             # angle,ping,ir — sensor reading inside a scan
             else:
+                # Ignore echoed command bytes if firmware still echoes received chars.
+                if line in {'w', 'a', 's', 'd', 'x', 'm', 'h', 'n', 'l', 'o', 'p'}:
+                    continue
+
                 parts = line.split(',')
                 if len(parts) == 3:
                     try:
@@ -925,6 +1034,8 @@ def on_key_press(event):
     elif key == 's':             move_backward()
     elif key == 'a':             move_left()
     elif key == 'd':             move_right()
+    elif key == 'p':             turn_right_90()
+    elif key == 'o':             turn_left_90()
     elif key in ('x', 'space'): stop()
     elif key == 'm':             start_scan()
     elif key == 'h':             stop_scan()
