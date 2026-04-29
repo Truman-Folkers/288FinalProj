@@ -10,7 +10,7 @@ import math
 # ============================================================
 HOST = "192.168.1.1"
 PORT = 288
-MOVEMENT_SCALE = 0.2  # 1 unit on map = 1 cm; adjust once real scale is known
+MOVEMENT_SCALE = 0.125  # 1 unit on map = 1 cm; adjust once real scale is known
 
 # ============================================================
 # FIELD DIMENSIONS  — fixed arena size in cm
