@@ -336,6 +336,15 @@ def move_left():
     if sock: sock.sendall(b'a')
     terminal.insert(tk.END, "Sent: a\n"); terminal.see(tk.END)
 
+def turn_right_90():
+    if sock: sock.sendall(b'p')
+    terminal.insert(tk.END, "Sent: a\n"); terminal.see(tk.END)
+
+def turn_left_90():
+    if sock: sock.sendall(b'o')
+    terminal.insert(tk.END, "Sent: a\n"); terminal.see(tk.END)
+
+
 def stop():
     if sock: sock.sendall(b'x')
     terminal.insert(tk.END, "Sent: x\n"); terminal.see(tk.END)
@@ -345,6 +354,8 @@ tk.Button(btn_frame, text="Start 0-90 Scan",   command=start_zero_to_ninety_scan
 tk.Button(btn_frame, text="Start 90-180 Scan", command=start_ninety_to_oneeighty_scan, **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Stop Scan",         command=stop_scan,                      **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Clear Graph",       command=clear_graph,                    **BTN_STYLE).pack(side=tk.LEFT, padx=3)
+tk.Button(btn_frame, text="Right 90",  command=turn_right_90,  **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
+tk.Button(btn_frame, text="Left 90", command=turn_left_90, **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
 tk.Button(btn_frame, text="↑ Forward",  command=move_forward,  **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
 tk.Button(btn_frame, text="↓ Backward", command=move_backward, **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
 tk.Button(btn_frame, text="→ Right",    command=move_right,    **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
