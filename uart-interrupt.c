@@ -139,7 +139,7 @@ void UART1_Handler(void)
         // read the byte received from UART1_DR_R and echo it back to PuTTY
         // ignore the error bits in UART1_DR_R
         byte_received = UART1_DR_R & 0xFF;
-        uart_sendChar(byte_received);
+//        uart_sendChar(byte_received);
 
         // if byte received is a carriage return
         if (byte_received == '\r')

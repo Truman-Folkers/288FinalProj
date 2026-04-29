@@ -29,7 +29,7 @@ volatile int bumpRightSensed = 0;
 void sendMovement(int scale, char type )
 {
     char sentString[16];
-    sprintf(sentString, "\nMOV:%d%c", scale, type);
+    sprintf(sentString, "\r\nMOV:%d%c\r\n", scale, type);
     int i = 0;
     while (sentString[i] != '\0')
     {
@@ -38,9 +38,11 @@ void sendMovement(int scale, char type )
     }
 }
 
-void sendBump(int l, int r){
-    char sentString[16];
-    sprintf(sentString, "\nBUMP:%d%d", l, r);
+void sendBump(int l, int r)
+{
+    char sentString[20];
+    sprintf(sentString, "\r\nBUMP:%d%d\r\n", l, r);
+
     int i = 0;
     while (sentString[i] != '\0')
     {
@@ -90,7 +92,7 @@ double turn_left(oi_t *sensor_data, double degrees)
 
     oi_setWheels(150, -150);
 
-    while (angle_robot < degrees - 8) //degrees - 8 for CyBot 24
+    while (angle_robot < degrees - 9) //degrees - 8 for CyBot 24
     {
         oi_update(sensor_data);
         angle_robot = angle_robot + sensor_data->angle;
@@ -251,6 +253,8 @@ void movement_update(oi_t *sensor_data)
     }
     if(bumpRightSensed || bumpLeftSensed){
         sendBump(bumpLeftSensed, bumpRightSensed);
+        bumpRightSensed = 0;
+        bumpLeftSensed = 0;
     }
 
 
