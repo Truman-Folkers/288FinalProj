@@ -197,6 +197,14 @@ void UART1_Handler(void)
                 returnChar = (char)byte_received;
                 current_cmd = CMD_STOP;
                 break;
+            case 'o':
+                returnChar = (char)byte_received;
+                current_cmd = CMD_LEFT_90;
+                break;
+            case 'p':
+                returnChar = (char)byte_received;
+                current_cmd = CMD_RIGHT_90;
+                break;
             default:
                 returnChar = ' ';
                 current_cmd = CMD_STOP;

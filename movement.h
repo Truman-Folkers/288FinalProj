@@ -26,7 +26,9 @@ typedef enum
    CMD_FORWARD,
    CMD_BACKWARD,
    CMD_LEFT,
-   CMD_RIGHT
+   CMD_RIGHT,
+   CMD_RIGHT_90,
+   CMD_LEFT_90
 } movement_cmd_t;
 
 extern volatile movement_cmd_t current_cmd;

@@ -96,7 +96,7 @@ double turn_left(oi_t *sensor_data, double degrees)
         angle_robot = angle_robot + sensor_data->angle;
     }
 
-    sendMovement((int)(degrees), 'l');
+    sendMovement((int)fabs(angle_robot), 'l');
     oi_setWheels(0, 0);
     return degrees;
 }
@@ -113,7 +113,7 @@ double turn_right(oi_t *sensor_data, double degrees)
         oi_update(sensor_data);
         angle_robot = angle_robot + sensor_data->angle;
     }
-    sendMovement((int)(degrees), 'r');
+    sendMovement((int)fabs(angle_robot), 'r');
     oi_setWheels(0, 0);
     return degrees;
 }
@@ -241,11 +241,11 @@ void movement_update(oi_t *sensor_data)
     while (robot_angle < -M_PI)
         robot_angle += 2 * M_PI;
 
-    if(sensor_data->bumpLeft){
+    if(sensor_data->bumpLeft && bumpLeftSensed == 0){
         current_cmd = CMD_STOP;
         bumpLeftSensed = 1;
     }
-    if(sensor_data->bumpRight){
+    if(sensor_data->bumpRight && bumpRightSensed == 0){
         current_cmd = CMD_STOP;
         bumpRightSensed = 1;
     }
@@ -287,12 +287,20 @@ void movement_update(oi_t *sensor_data)
         break;
 
     case CMD_LEFT:
-        turn_left(sensor_data, 90);
-        current_cmd = CMD_STOP;
+        oi_setWheels(150, -150);
         break;
 
     case CMD_RIGHT:
+        oi_setWheels(-150, 150);
+        break;
+
+    case CMD_RIGHT_90:
         turn_right(sensor_data, 90);
+        current_cmd = CMD_STOP;
+        break;
+
+    case CMD_LEFT_90:
+        turn_left(sensor_data, 90);
         current_cmd = CMD_STOP;
         break;
 
