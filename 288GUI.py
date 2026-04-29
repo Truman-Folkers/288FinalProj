@@ -10,7 +10,7 @@ import math
 # ============================================================
 HOST = "192.168.1.1"
 PORT = 288
-MOVEMENT_SCALE = 1.0   # 1 unit on map = 1 cm; adjust once real scale is known
+MOVEMENT_SCALE = 0.2  # 1 unit on map = 1 cm; adjust once real scale is known
 
 # ============================================================
 # FIELD DIMENSIONS  — fixed arena size in cm
@@ -55,10 +55,10 @@ ADC_DIST_SCALE = 0.05   # cm per ADC count — adjust to match real sensor range
 # ============================================================
 # SOCKET SETUP  — comment back in when connected to robot
 # ============================================================
-sock = None
-#sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#sock.connect((HOST, PORT))
-#sock.setblocking(False)
+# sock = None
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect((HOST, PORT))
+sock.setblocking(False)
 
 recv_buffer = ""
 
@@ -898,7 +898,7 @@ def load_demo_scans():
         for sid in random.sample(range(1, 7), k=random.randint(2, 4)):
             ingest_col_event(sid, random.randint(400, 3800))
 
-load_demo_scans()
+# load_demo_scans()
 
 # ============================================================
 # KEYBOARD BINDINGS
