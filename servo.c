@@ -13,14 +13,14 @@
 
 //default for cal values, changed in main
 //defined as pulse width for 0 and 180, respectively
-volatile uint32_t right_calibration_value = 16000;
-volatile uint32_t left_calibration_value = 32000;
+volatile uint32_t right_cal_value;
+volatile uint32_t left_cal_value;
 
 void servo_init(void)
 {
     uint32_t period = 320000;
-    uint32_t pulse_width = 24000;   // about 90 degrees
-    uint32_t match_value = period - pulse_width;
+    //uint32_t pulse_width = 24000;   // about 90 degrees
+    //uint32_t match_value = period - pulse_width;
 
     // enable clock to Timer1 and Port B
     SYSCTL_RCGCTIMER_R |= 0x02;
@@ -54,8 +54,8 @@ void servo_init(void)
     TIMER1_TBILR_R = period & 0xFFFF;
 
     // set initial pulse width
-    TIMER1_TBPMR_R = (match_value >> 16) & 0xFF;
-    TIMER1_TBMATCHR_R = match_value & 0xFFFF;
+    TIMER1_TBPMR_R = (left_cal_value >> 16) & 0xFF;
+    TIMER1_TBMATCHR_R = left_cal_value & 0xFFFF;
 
     // enable Timer1B
     TIMER1_CTL_R |= 0x00000100;
@@ -67,21 +67,17 @@ void servo_move(uint16_t degrees)
     uint32_t period = 320000;
     uint32_t match_value;
 
-    if (degrees > 180)
-    {
-        degrees = 180;
-    }
 
     //NEW! uses cal values from 0 and 180 pulse width
     //creates a linear model for other pulse widths
-    pulse_width = right_calibration_value + (((left_calibration_value - right_calibration_value) * degrees) / 180);
+    pulse_width = right_cal_value + (((left_cal_value - right_cal_value) * degrees) / 180);
 
     match_value = period - pulse_width;
 
     TIMER1_TBPMR_R = (match_value >> 16) & 0xFF;
     TIMER1_TBMATCHR_R = match_value & 0xFFFF;
 
-    timer_waitMillis(200);
+    timer_waitMillis(800);
 }
 
 
@@ -102,46 +98,52 @@ void servo_calibrate(){
     lcd_printf("Finding right...");
 
     //while button 4 isn't being pushed
-    while(GPIO_PORTE_DATA_R & 0x08 != 0){
+    while((GPIO_PORTE_DATA_R & 0x08) != 0){
 
         //if button 2 is pushed, move right
-        if(GPIO_PORTE_DATA_R & 0x02 == 0){
-            servo_move(--angle);
+        if((GPIO_PORTE_DATA_R & 0x02) == 0){
+            angle -= 4;
+            servo_move(angle);
         }
 
         //if button 1 is pushed, move left
         else if((GPIO_PORTE_DATA_R & 0x01) == 0){
-            servo_move(++angle);
+            angle += 4;
+            servo_move(angle);
         }
     }
 
     //sets right calibration value, prints to lcd
     int right = (TIMER1_TBPMR_R << 16) + TIMER1_TBMATCHR_R;
-    lcd_printf("Right: %i", right);
-    lcd_gotoLine(1);
-    lcd_printf("Press 3 to continue");
+    lcd_printf("Right: %i", 320000-right);
+
 
 
     //waits until button 3 is pressed to continue
-    while(GPIO_PORTE_DATA_R & 0x04 != 0){};
+    while((GPIO_PORTE_DATA_R & 0x04) != 0){};
 
     lcd_printf("Finding left...");
-    
+
     //while button 4 isn't being pushed
-    while(GPIO_PORTE_DATA_R & 0x08 != 0){
+    while((GPIO_PORTE_DATA_R & 0x08) != 0){
 
         //if button 2 is pushed, move right
-        if(GPIO_PORTE_DATA_R & 0x02 == 0){
-            servo_move(--angle);
+        if((GPIO_PORTE_DATA_R & 0x02) == 0){
+            angle -= 4;
+            servo_move(angle);
         }
 
         //if button 1 is pushed, move left
         else if((GPIO_PORTE_DATA_R & 0x01) == 0){
-            servo_move(++angle);
+            angle += 4;
+            servo_move(angle);
         }
     }
 
     //sets left calibration value, prints to lcd
     int left = (TIMER1_TBPMR_R << 16) + TIMER1_TBMATCHR_R;
-    lcd_printf("Left: %i", left);
+//    left_cal_value = 320000 - left;
+//    right_cal_value = 320000 - right;
+    lcd_printf("Left: %i", 320000 - left);
+    timer_waitMillis(2000);
 }
