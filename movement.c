@@ -49,6 +49,17 @@ void sendBump(int l, int r){
     }
 }
 
+void sendCol(int a, int d){
+    char sentString[16];
+    sprintf(sentString, "\nCOL:%d%d", a, d);
+    int i = 0;
+    while (sentString[i] != '\0')
+    {
+        uart_sendChar(sentString[i]);
+        i++;
+    }
+}
+
 double move_forward(oi_t *sensor_data, double distance_mm)
 {
 
@@ -252,6 +263,27 @@ void movement_update(oi_t *sensor_data)
     if(bumpRightSensed || bumpLeftSensed){
         sendBump(bumpLeftSensed, bumpRightSensed);
     }
+
+    //sends collision warning to GUI once object
+    //is sensed by 
+   if(lightBumpLeftSignal > 3500){
+    sendCol(6, lightBumpLeftSignal);
+   }
+   if(lightBumpFrontLeftSignal > 3500){
+    sendCol(5, lightBumpFrontLeftSignal);
+   }
+   if(lightBumpCenterLeftSignal > 3500){
+    sendCol(4, lightBumpCenterLeftSignal);
+   }
+   if(lightBumpCenterRightSignal > 3500){
+    sendCol(3, lightBumpCenterRightSignal);
+   }
+   if(lightBumpFrontRightSignal > 3500){
+    sendCol(2, lightBumpFrontRightSignal);
+   }
+   if(lightBumpRightSignal > 3500){
+    sendCol(1, lightBumpRightSignal);
+   }
 
 
 
