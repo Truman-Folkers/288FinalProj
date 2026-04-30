@@ -316,40 +316,30 @@ void movement_update(oi_t *sensor_data)
     while (robot_angle < -M_PI)
         robot_angle += 2 * M_PI;
 
-    /*
-     * BUMP LOGIC:
-     * Stop only when a NEW bump is detected.
-     * Do not keep forcing CMD_STOP every loop while the bumper is held.
-     */
+    static int bump_latched = 0;
+
     int bumpLeftNow = sensor_data->bumpLeft;
     int bumpRightNow = sensor_data->bumpRight;
+    int bumpNow = bumpLeftNow || bumpRightNow;
 
-    int newLeftBump = bumpLeftNow && !prevBumpLeft;
-    int newRightBump = bumpRightNow && !prevBumpRight;
-
-    if (newLeftBump || newRightBump)
+    // New bump detected
+    if (bumpNow && !bump_latched)
     {
         oi_setWheels(0, 0);
         current_cmd = CMD_STOP;
-
         sendBump(bumpLeftNow, bumpRightNow);
+        bump_latched = 1;
     }
-    else if (!bumpLeftNow && !bumpRightNow && (prevBumpLeft || prevBumpRight))
+
+    // Bump released
+    else if (!bumpNow && bump_latched)
     {
-        sendBump(prevBumpLeft, prevBumpRight);
-        prevBumpLeft = 0;
-        prevBumpRight = 0;
+        sendBump(0, 0);
+        bump_latched = 0;
     }
 
-    prevBumpLeft = bumpLeftNow;
-    prevBumpRight = bumpRightNow;
-
-    /*
-     * Optional safety:
-     * If the bumper is still pressed, do not allow forward movement.
-     * But allow backward, left, right, and stop commands.
-     */
-    if ((bumpLeftNow || bumpRightNow) && current_cmd == CMD_FORWARD)
+    // While bump is still pressed, ONLY block forward
+    if (bumpNow && current_cmd == CMD_FORWARD)
     {
         current_cmd = CMD_STOP;
     }
