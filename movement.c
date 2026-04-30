@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <math.h>
 
-#define LIGHT_BUMP_OBJECT_THRESHOLD 3500
+#define LIGHT_BUMP_OBJECT_THRESHOLD 2800
 #define SENSOR_REPORT_TICKS 10
 
 volatile float map_x[10];
@@ -55,8 +55,7 @@ void sendBump(int l, int r)
     }
 }
 
-void sendCollision(int sensor_id, int value)
-{
+void sendCol(int sensor_id, int value){
     char sentString[24];
     sprintf(sentString, "\r\nCOL:%d,%d\r\n", sensor_id, value);
 
@@ -116,7 +115,7 @@ static void report_adc_object_sensors(oi_t *sensor_data)
     {
         if (sensors[i].active)
         {
-            sendCollision(sensors[i].id, sensors[i].value);
+            sendCol(sensors[i].id, sensors[i].value);
         }
     }
 }
@@ -162,7 +161,7 @@ double turn_left(oi_t *sensor_data, double degrees)
 
     oi_setWheels(150, -150);
 
-    while (angle_robot < degrees - 9.5) //degrees - 8 for CyBot 24
+    while (angle_robot < degrees - 10.8) //degrees - 8 for CyBot 24
     {
         oi_update(sensor_data);
         angle_robot = angle_robot + sensor_data->angle;
@@ -343,6 +342,26 @@ void movement_update(oi_t *sensor_data)
     {
         current_cmd = CMD_STOP;
     }
+
+//    if(sensor_data->lightBumpLeftSignal > 2800){
+//        sendCol(6, sensor_data->lightBumpLeftSignal);
+//    }
+//    if(sensor_data->lightBumpFrontLeftSignal > 2800){
+//            sendCol(5, sensor_data->lightBumpFrontLeftSignal);
+//        }
+//    if(sensor_data->lightBumpCenterLeftSignal > 2800){
+//            sendCol(4, sensor_data->lightBumpCenterLeftSignal);
+//        }
+//    if(sensor_data->lightBumpCenterRightSignal > 2800){
+//            sendCol(3, sensor_data->lightBumpCenterRightSignal);
+//        }
+//    if(sensor_data->lightBumpFrontRightSignal > 2800){
+//            sendCol(2, sensor_data->lightBumpFrontRightSignal);
+//        }
+//    if(sensor_data->lightBumpRightSignal > 2800){
+//            sendCol(6, sensor_data->lightBumpRightSignal);
+//        }
+
 
     /*
      * Report this tick's deltas straight to the GUI.

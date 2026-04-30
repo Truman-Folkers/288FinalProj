@@ -41,12 +41,12 @@ SEND_OOB_WARNING_TO_ROBOT = False  # Keep False: firmware uses 'o' for LEFT_90.
 # Change these once you know the physical mounting angles.
 # ============================================================
 ADC_SENSOR_ANGLES = {
-    1:  10,    # Light bump center left
-    2:  45,    # Light bump front left
-    3: -45,    # Light bump front right
-    4:  90,    # Light bump left side
-    5: -90,    # Light bump right side
-    6: -10,    # Light bump center right
+    1:  30,    # Light bump center left
+    2:  55,    # Light bump front left
+    3:  80,    # Light bump front right
+    4:  100,   # Light bump left side
+    5:  125,   # Light bump right side
+    6:  150,   # Light bump center right
     7:  90,    # Cliff/bottom left
     8:  35,    # Cliff/bottom front left
     9: -35,    # Cliff/bottom front right
