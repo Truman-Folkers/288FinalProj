@@ -5,12 +5,12 @@
 // * Tests sensors for hole and tape
 // */
 //
-//#include "timer.h"
-//#include "lcd.h"
-//#include "open_interface.h"
-//#include "sensor_test.h"
-//#include <stdint.h>
-//#include <inc/tm4c123gh6pm.h>
+#include "timer.h"
+#include "lcd.h"
+#include "open_interface.h"
+#include "sensor_test.h"
+#include <stdint.h>
+#include <inc/tm4c123gh6pm.h>
 //
 // void test_hole(oi_t *sensor_data){
 //

@@ -266,23 +266,23 @@ void movement_update(oi_t *sensor_data)
 
     //sends collision warning to GUI once object
     //is sensed by 
-   if(lightBumpLeftSignal > 3500){
-    sendCol(6, lightBumpLeftSignal);
+   if(sensor_data->lightBumpLeftSignal > 3500){
+    sendCol(6, sensor_data->lightBumpLeftSignal);
    }
-   if(lightBumpFrontLeftSignal > 3500){
-    sendCol(5, lightBumpFrontLeftSignal);
+   if(sensor_data->lightBumpFrontLeftSignal > 3500){
+    sendCol(5, sensor_data->lightBumpFrontLeftSignal);
    }
-   if(lightBumpCenterLeftSignal > 3500){
-    sendCol(4, lightBumpCenterLeftSignal);
+   if(sensor_data->lightBumpCenterLeftSignal > 3500){
+    sendCol(4, sensor_data->lightBumpCenterLeftSignal);
    }
-   if(lightBumpCenterRightSignal > 3500){
-    sendCol(3, lightBumpCenterRightSignal);
+   if(sensor_data->lightBumpCenterRightSignal > 3500){
+    sendCol(3, sensor_data->lightBumpCenterRightSignal);
    }
-   if(lightBumpFrontRightSignal > 3500){
-    sendCol(2, lightBumpFrontRightSignal);
+   if(sensor_data->lightBumpFrontRightSignal > 3500){
+    sendCol(2, sensor_data->lightBumpFrontRightSignal);
    }
-   if(lightBumpRightSignal > 3500){
-    sendCol(1, lightBumpRightSignal);
+   if(sensor_data->lightBumpRightSignal > 3500){
+    sendCol(1, sensor_data->lightBumpRightSignal);
    }
 
 
