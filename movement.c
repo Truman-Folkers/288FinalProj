@@ -162,13 +162,13 @@ double turn_left(oi_t *sensor_data, double degrees)
 
     oi_setWheels(150, -150);
 
-    while (angle_robot < degrees - 9) //degrees - 8 for CyBot 24
+    while (angle_robot < degrees - 9.5) //degrees - 8 for CyBot 24
     {
         oi_update(sensor_data);
         angle_robot = angle_robot + sensor_data->angle;
     }
 
-    sendMovement((int)fabs(angle_robot), 'l');
+    sendMovement((int)90, 'l');
     oi_setWheels(0, 0);
     return degrees;
 }
@@ -180,12 +180,12 @@ double turn_right(oi_t *sensor_data, double degrees)
 
     oi_setWheels(-150, 150);
 
-    while (angle_robot > two + 10) //two + 10 for CyBot 24
+    while (angle_robot > two + 12) //two + 10 for CyBot 24
     {
         oi_update(sensor_data);
         angle_robot = angle_robot + sensor_data->angle;
     }
-    sendMovement((int)fabs(angle_robot), 'r');
+    sendMovement((int)90, 'r');
     oi_setWheels(0, 0);
     return degrees;
 }
@@ -353,8 +353,20 @@ void movement_update(oi_t *sensor_data)
     if (d_mm > 0)        sendMovement( d_mm, 'f');
     else if (d_mm < 0)   sendMovement(-d_mm, 'b');
 
-    if (a_deg > 0)       sendMovement( a_deg, 'l');
-    else if (a_deg < 0)  sendMovement(-a_deg, 'r');
+    if (current_cmd == CMD_LEFT)
+    {
+        if (a_deg > 0)
+        {
+            sendMovement(a_deg, 'l');
+        }
+    }
+    else if (current_cmd == CMD_RIGHT)
+    {
+        if (a_deg < 0)
+        {
+            sendMovement(-a_deg, 'r');
+        }
+    }
 
     switch (current_cmd)
     {

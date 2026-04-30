@@ -229,6 +229,8 @@ def apply_movements(start_x, start_y, start_heading, movements):
 # ============================================================
 scans      = []
 col_events = []
+manual_markers = []   # user-placed object markers: [(x, y), ...]
+MARKER_PICK_RADIUS_CM = 10
 
 def ingest_scan(data):
     scan_number = len(scans) + 1
@@ -364,10 +366,17 @@ def start_ninety_to_oneeighty_scan():
     _send_command(b'l', 'l')
 
 def clear_graph():
+    scan_graph_data.clear()
+    _active_angles.clear(); _active_ping_vals.clear(); _active_ir_vals.clear()
+    ax1.clear(); ax2.clear()
+    style_axes(); graph_canvas.draw(); draw_map()
+
+
+def reset_map():
     global live_x, live_y, live_heading, _oob_warning_sent
     scan_graph_data.clear()
     _active_angles.clear(); _active_ping_vals.clear(); _active_ir_vals.clear()
-    scans.clear(); col_events.clear()
+    scans.clear(); col_events.clear(); manual_markers.clear()
     live_x, live_y, live_heading = 0.0, 0.0, -90.0
     _oob_warning_sent = False
     ax1.clear(); ax2.clear()
@@ -458,6 +467,7 @@ tk.Button(btn_frame, text="Start 0-90 Scan",   command=start_zero_to_ninety_scan
 tk.Button(btn_frame, text="Start 90-180 Scan", command=start_ninety_to_oneeighty_scan, **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Stop Scan",         command=stop_scan,                      **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Clear Graph",       command=clear_graph,                    **BTN_STYLE).pack(side=tk.LEFT, padx=3)
+tk.Button(btn_frame, text="Reset",             command=reset_map,                      **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Right 90",  command=turn_right_90,  **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
 tk.Button(btn_frame, text="Left 90", command=turn_left_90, **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
 tk.Button(btn_frame, text="↑ Forward",  command=move_forward,  **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
@@ -512,6 +522,7 @@ show_ir_dots   = tk.BooleanVar(value=True)
 show_adc_rays  = tk.BooleanVar(value=True)   # line from robot → dot
 show_adc_dots  = tk.BooleanVar(value=True)   # projected detection dot
 show_path      = tk.BooleanVar(value=True)
+show_manual_markers = tk.BooleanVar(value=True)
 
 SWITCH_ON_BG = "#083951"
 SWITCH_OFF_BG = "#2a2a3e"
@@ -608,6 +619,7 @@ tk.Frame(row2, height=16, **SEP_STYLE).pack(side=tk.LEFT, padx=10, fill=tk.Y)
 tk.Label(row2, text="MAP", bg="#0d0d1a", fg="#aaaacc",
          font=SWITCH_FONT, width=4).pack(side=tk.LEFT, padx=(0, 2))
 ToggleSwitch(row2, "path", show_path, callback=_redraw).pack(side=tk.LEFT, padx=1)
+ToggleSwitch(row2, "marks", show_manual_markers, callback=_redraw).pack(side=tk.LEFT, padx=1)
 
 
 # ---- RIGHT panel: vertical pane — map on top, terminal on bottom ----
@@ -679,6 +691,48 @@ style_map_ax()
 map_canvas = FigureCanvasTkAgg(map_fig, master=map_frame)
 map_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
+def on_map_click(event):
+    """
+    Right-click on the map to place/remove a manual object marker.
+    Similar to marking a mine in Minesweeper.
+
+    Right-click empty spot: add marker.
+    Right-click near existing marker: remove marker.
+    """
+    if event.inaxes != map_ax:
+        return
+
+    # Matplotlib button 3 = right mouse button
+    if event.button != 3:
+        return
+
+    if event.xdata is None or event.ydata is None:
+        return
+
+    x, y = event.xdata, event.ydata
+
+    # Keep markers inside the field only
+    if not (0 <= x <= FIELD_W and -FIELD_H <= y <= 0):
+        terminal_log("  [marker ignored: outside field]\n")
+        return
+
+    # If right-click near an existing marker, remove it
+    for i, (mx, my) in enumerate(manual_markers):
+        dist = math.hypot(x - mx, y - my)
+        if dist <= MARKER_PICK_RADIUS_CM:
+            removed = manual_markers.pop(i)
+            terminal_log(f"  [object marker removed at ({removed[0]:.1f}, {removed[1]:.1f})]\n")
+            draw_map()
+            return
+
+    # Otherwise add a new marker
+    manual_markers.append((x, y))
+    terminal_log(f"  [object marker added at ({x:.1f}, {y:.1f})]\n")
+    draw_map()
+
+
+map_canvas.mpl_connect("button_press_event", on_map_click)
+
 
 # ============================================================
 # MAP DRAWING
@@ -708,6 +762,17 @@ def draw_map():
         zorder=10)
     map_ax.scatter(live_x, live_y, color="#00ffff", s=80, zorder=11,
                    edgecolors="#fff", linewidths=0.8, marker='^')
+
+    # manual object markers placed by user
+    if show_manual_markers.get() and manual_markers:
+        for i, (mx, my) in enumerate(manual_markers, start=1):
+            map_ax.scatter(mx, my,
+                           color="#ffdd00", s=120, zorder=30,
+                           marker="X", edgecolors="#000000", linewidths=0.8)
+            map_ax.text(mx + 4, my + 4,
+                        f"M{i}", color="#ffdd00",
+                        fontsize=8, fontfamily="Courier New",
+                        fontweight="bold", zorder=31)
 
     # bump indicator
     if bump_left or bump_right:
@@ -818,6 +883,10 @@ def _draw_legend():
     if show_adc_rays.get() or show_adc_dots.get():
         elems.append(Patch(facecolor=ADC_COLOR, edgecolor="#ff88ff",
                            alpha=0.6, label="ADC"))
+    if show_manual_markers.get() and manual_markers:
+        elems.append(Line2D([0],[0], color="#ffdd00", marker="X",
+                            linestyle="None", markersize=7,
+                            label="Marked Object"))
     if elems:
         map_ax.legend(handles=elems, loc="upper right",
                       facecolor="#1a1a2e", edgecolor="#333",

@@ -392,10 +392,12 @@ int main(void)
 //    right_calibration_value = 290500;
 //    left_calibration_value = 1282750;
 
-    right_cal_value = 6400;
-    left_cal_value = 34844;
+    right_cal_value = 8533;
+    left_cal_value = 37333;
 
     servo_init();
+
+//    servo_calibrate();
     ping_init();
 
     lcd_printf("Send 'm'");
