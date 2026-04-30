@@ -223,10 +223,12 @@ void avoidObjects(oi_t *sensor_data)
 
 void movement_update(oi_t *sensor_data)
 {
+    static int prevBumpLeft = 0;
+    static int prevBumpRight = 0;
+
     float distance1;
     float angle1;
-    bumpLeftSensed = 0;
-    bumpRightSensed = 0;
+
     oi_update(sensor_data);
 
     distance1 = sensor_data->distance;
@@ -243,31 +245,40 @@ void movement_update(oi_t *sensor_data)
     while (robot_angle < -M_PI)
         robot_angle += 2 * M_PI;
 
-    if(sensor_data->bumpLeft && bumpLeftSensed == 0){
+    /*
+     * BUMP LOGIC:
+     * Stop only when a NEW bump is detected.
+     * Do not keep forcing CMD_STOP every loop while the bumper is held.
+     */
+    int bumpLeftNow = sensor_data->bumpLeft;
+    int bumpRightNow = sensor_data->bumpRight;
+
+    int newLeftBump = bumpLeftNow && !prevBumpLeft;
+    int newRightBump = bumpRightNow && !prevBumpRight;
+
+    if (newLeftBump || newRightBump)
+    {
+        oi_setWheels(0, 0);
         current_cmd = CMD_STOP;
-        bumpLeftSensed = 1;
-    }
-    if(sensor_data->bumpRight && bumpRightSensed == 0){
-        current_cmd = CMD_STOP;
-        bumpRightSensed = 1;
-    }
-    if(bumpRightSensed || bumpLeftSensed){
-        sendBump(bumpLeftSensed, bumpRightSensed);
-        bumpRightSensed = 0;
-        bumpLeftSensed = 0;
+
+        sendBump(bumpLeftNow, bumpRightNow);
     }
 
-
+    prevBumpLeft = bumpLeftNow;
+    prevBumpRight = bumpRightNow;
 
     /*
-     * Report this tick's deltas straight to the GUI.  No accumulation, no
-     * thresholds — Python handles whatever stream we send.  We do skip
-     * deltas that are below 1 (mm/deg) so we don't spam "MOV:0f" lines.
-     *
-     * We might have to fine tune it if the GUI is getting to many 0 updates that accumulate to to much.
-     *
-     * Sign convention: + distance = forward, - distance = backward;
-     *                  + angle    = left    (CCW),  - angle    = right.
+     * Optional safety:
+     * If the bumper is still pressed, do not allow forward movement.
+     * But allow backward, left, right, and stop commands.
+     */
+    if ((bumpLeftNow || bumpRightNow) && current_cmd == CMD_FORWARD)
+    {
+        current_cmd = CMD_STOP;
+    }
+
+    /*
+     * Report this tick's deltas straight to the GUI.
      */
     int d_mm  = (int)sensor_data->distance;
     int a_deg = (int)sensor_data->angle;
@@ -282,12 +293,10 @@ void movement_update(oi_t *sensor_data)
     {
     case CMD_FORWARD:
         oi_setWheels(150, 150);
-//        sendString(((int)(distance_mm * 10)), 'f');
         break;
 
     case CMD_BACKWARD:
         oi_setWheels(-150, -150);
-//        sendString(((int)(distance_mm * 10)), 'b');
         break;
 
     case CMD_LEFT:
@@ -314,7 +323,6 @@ void movement_update(oi_t *sensor_data)
         break;
     }
 }
-
 
 //    // Handle bump sensors
 //    if (sensor_data->bumpLeft)
