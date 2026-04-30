@@ -62,10 +62,10 @@ ADC_DIST_SCALE = 0.05   # cm per ADC count — adjust to match real sensor range
 # ============================================================
 # SOCKET SETUP  — comment back in when connected to robot
 # ============================================================
-# sock = None
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.connect((HOST, PORT))
-sock.setblocking(False)
+sock = None
+#sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#sock.connect((HOST, PORT))
+#sock.setblocking(False)
 
 recv_buffer = ""
 
@@ -230,10 +230,34 @@ def apply_movements(start_x, start_y, start_heading, movements):
 scans      = []
 col_events = []
 
+# ============================================================
+# OCCUPANCY POINT CLOUD  — persistent map of detected obstacles
+# Each entry: (x, y, source)  where source is 'ping' or 'ir'
+# Built incrementally; never cleared by "Clear Graphs".
+# ============================================================
+occupancy_cloud = []   # list of (x, y, source_str)
+
+# ============================================================
+# MAP MARKERS  — user-placed annotations on the map
+# Each entry: dict with keys x, y, label, color
+# ============================================================
+map_markers = []       # list of dicts
+
 def ingest_scan(data):
     scan_number = len(scans) + 1
     scan = Scan(scan_number, [], data, live_x, live_y, live_heading)
     scans.append(scan)
+    # Build occupancy cloud from this scan's sensor endpoints
+    for angle_deg, ping_cm, ir_raw in data:
+        world_angle = math.radians(scan.heading + (angle_deg - 90))
+        ray_len = min(ping_cm, MAX_PING_RAY)
+        px = scan.x + ray_len * math.cos(world_angle)
+        py = scan.y + ray_len * math.sin(world_angle)
+        occupancy_cloud.append((px, py, 'ping'))
+        ir_len = ir_raw * IR_SCALE * MOVEMENT_SCALE
+        ix = scan.x + ir_len * math.cos(world_angle)
+        iy = scan.y + ir_len * math.sin(world_angle)
+        occupancy_cloud.append((ix, iy, 'ir'))
     print(f"[INFO] Ingested {scan}")
     draw_map()
     return scan
@@ -275,6 +299,10 @@ _in_scan     = False
 bump_left    = 0
 bump_right   = 0
 _oob_warning_sent = False  # True while robot is within OOB_THRESHOLD of a wall
+
+# Continuous path history — every pose update is recorded here so the map
+# draws a smooth trail even between scan positions.
+path_history = [(live_x, live_y)]   # list of (x, y) tuples
 
 
 def _check_bounds():
@@ -325,6 +353,7 @@ def apply_single_movement(cmd):
         live_y -= value * MOVEMENT_SCALE * math.sin(rad)
 
     live_heading %= 360
+    path_history.append((live_x, live_y))   # record continuous trail
     _check_bounds()
     draw_map()
     return True
@@ -364,14 +393,29 @@ def start_ninety_to_oneeighty_scan():
     _send_command(b'l', 'l')
 
 def clear_graph():
+    """Full reset — wipes everything including map data and live pose."""
     global live_x, live_y, live_heading, _oob_warning_sent
     scan_graph_data.clear()
     _active_angles.clear(); _active_ping_vals.clear(); _active_ir_vals.clear()
     scans.clear(); col_events.clear()
+    occupancy_cloud.clear()
+    map_markers.clear()
+    path_history.clear()
     live_x, live_y, live_heading = 0.0, 0.0, -90.0
+    path_history.append((live_x, live_y))
     _oob_warning_sent = False
     ax1.clear(); ax2.clear()
-    style_axes(); graph_canvas.draw(); draw_map()
+    style_axes(); graph_canvas.draw()
+    _refresh_marker_list()
+    draw_map()
+
+def clear_graphs_only():
+    """Clear only the sensor graphs — map data and robot position are preserved."""
+    scan_graph_data.clear()
+    _active_angles.clear(); _active_ping_vals.clear(); _active_ir_vals.clear()
+    ax1.clear(); ax2.clear()
+    style_axes(); graph_canvas.draw()
+    terminal_log("  [graphs cleared — map data retained]\n")
 
 def _send_command(byte_cmd, label, local_movement=None):
     """
@@ -457,7 +501,14 @@ tk.Button(btn_frame, text="Start Scan",        command=start_scan,              
 tk.Button(btn_frame, text="Start 0-90 Scan",   command=start_zero_to_ninety_scan,      **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Start 90-180 Scan", command=start_ninety_to_oneeighty_scan, **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Stop Scan",         command=stop_scan,                      **BTN_STYLE).pack(side=tk.LEFT, padx=3)
-tk.Button(btn_frame, text="Clear Graph",       command=clear_graph,                    **BTN_STYLE).pack(side=tk.LEFT, padx=3)
+tk.Button(btn_frame, text="Clear Graphs",      command=clear_graphs_only,
+          bg="#083820", fg="#00ff88", activebackground="#0f5530",
+          activeforeground="#00ff88", relief=tk.FLAT,
+          font=("Courier New", 9, "bold"), padx=8, pady=3).pack(side=tk.LEFT, padx=3)
+tk.Button(btn_frame, text="Full Reset",        command=clear_graph,
+          bg="#3a1010", fg="#ff6666", activebackground="#5a1818",
+          activeforeground="#ff4444", relief=tk.FLAT,
+          font=("Courier New", 9, "bold"), padx=8, pady=3).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Right 90",  command=turn_right_90,  **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
 tk.Button(btn_frame, text="Left 90", command=turn_left_90, **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
 tk.Button(btn_frame, text="↑ Forward",  command=move_forward,  **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
@@ -505,13 +556,15 @@ graph_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 # ============================================================
 
 # BooleanVars — one per independent layer
-show_ping_rays = tk.BooleanVar(value=True)
-show_ping_dots = tk.BooleanVar(value=True)
-show_ir_rays   = tk.BooleanVar(value=True)
-show_ir_dots   = tk.BooleanVar(value=True)
-show_adc_rays  = tk.BooleanVar(value=True)   # line from robot → dot
-show_adc_dots  = tk.BooleanVar(value=True)   # projected detection dot
-show_path      = tk.BooleanVar(value=True)
+show_ping_rays  = tk.BooleanVar(value=True)
+show_ping_dots  = tk.BooleanVar(value=True)
+show_ir_rays    = tk.BooleanVar(value=True)
+show_ir_dots    = tk.BooleanVar(value=True)
+show_adc_rays   = tk.BooleanVar(value=True)   # line from robot → dot
+show_adc_dots   = tk.BooleanVar(value=True)   # projected detection dot
+show_path       = tk.BooleanVar(value=True)
+show_map_cloud  = tk.BooleanVar(value=True)   # cumulative occupancy point cloud
+show_markers    = tk.BooleanVar(value=True)   # user-placed object markers
 
 SWITCH_ON_BG = "#083951"
 SWITCH_OFF_BG = "#2a2a3e"
@@ -596,7 +649,7 @@ ToggleSwitch(row1, "dots", show_ir_dots, callback=_redraw).pack(side=tk.LEFT, pa
 
 # --- row 2: ADC and PATH ---
 row2 = tk.Frame(settings_outer, bg="#0d0d1a")
-row2.pack(fill=tk.X, padx=6, pady=(1, 5))
+row2.pack(fill=tk.X, padx=6, pady=1)
 
 tk.Label(row2, text="ADC", bg="#0d0d1a", fg="#cc44ff",
          font=SWITCH_FONT, width=5).pack(side=tk.LEFT, padx=(0, 2))
@@ -609,12 +662,35 @@ tk.Label(row2, text="MAP", bg="#0d0d1a", fg="#aaaacc",
          font=SWITCH_FONT, width=4).pack(side=tk.LEFT, padx=(0, 2))
 ToggleSwitch(row2, "path", show_path, callback=_redraw).pack(side=tk.LEFT, padx=1)
 
+# --- row 3: Occupancy cloud and Markers ---
+row3 = tk.Frame(settings_outer, bg="#0d0d1a")
+row3.pack(fill=tk.X, padx=6, pady=(1, 5))
 
-# ---- RIGHT panel: vertical pane — map on top, terminal on bottom ----
+tk.Label(row3, text="CLOUD", bg="#0d0d1a", fg="#44ddff",
+         font=SWITCH_FONT, width=5).pack(side=tk.LEFT, padx=(0, 2))
+ToggleSwitch(row3, "map", show_map_cloud, callback=_redraw).pack(side=tk.LEFT, padx=1)
+
+tk.Frame(row3, height=16, **SEP_STYLE).pack(side=tk.LEFT, padx=10, fill=tk.Y)
+
+tk.Label(row3, text="MARKS", bg="#0d0d1a", fg="#ffaa00",
+         font=SWITCH_FONT, width=5).pack(side=tk.LEFT, padx=(0, 2))
+ToggleSwitch(row3, "show", show_markers, callback=_redraw).pack(side=tk.LEFT, padx=1)
+
+
+# ---- RIGHT panel: horizontal split — map+terminal LEFT, marker panel RIGHT ----
 right_frame = tk.Frame(paned, bg="#0d0d1a")
 paned.add(right_frame, minsize=200, stretch="always")
 
-right_paned = tk.PanedWindow(right_frame, orient=tk.VERTICAL, bg="#0a0a1a",
+right_h_paned = tk.PanedWindow(right_frame, orient=tk.HORIZONTAL, bg="#0a0a1a",
+                                sashwidth=5, sashrelief=tk.FLAT,
+                                sashcursor="sb_h_double_arrow")
+right_h_paned.pack(fill=tk.BOTH, expand=True)
+
+# ---- map+terminal vertical pane ----
+map_term_frame = tk.Frame(right_h_paned, bg="#0d0d1a")
+right_h_paned.add(map_term_frame, stretch="always")
+
+right_paned = tk.PanedWindow(map_term_frame, orient=tk.VERTICAL, bg="#0a0a1a",
                               sashwidth=6, sashrelief=tk.FLAT,
                               sashcursor="sb_v_double_arrow")
 right_paned.pack(fill=tk.BOTH, expand=True)
@@ -640,6 +716,118 @@ terminal = ScrolledText(term_frame, bg="#0d0d1a", fg="#00ff88",
                         insertbackground="#00ff88",
                         font=("Courier New", 9), relief=tk.FLAT)
 terminal.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
+
+# ---- MARKER SIDEBAR (right column) ----
+marker_sidebar = tk.Frame(right_h_paned, bg="#0d0d1a", width=200)
+right_h_paned.add(marker_sidebar, minsize=180, width=210, stretch="never")
+
+tk.Label(marker_sidebar, text="OBJECT MARKERS", bg="#0d0d1a", fg="#ffaa00",
+         font=("Courier New", 9, "bold")).pack(anchor="w", padx=8, pady=(8, 3))
+
+# Marker mode toggle
+_marker_mode = tk.BooleanVar(value=False)
+
+def _toggle_marker_mode():
+    if _marker_mode.get():
+        marker_mode_btn.config(text="◉ MARKING ON ", bg="#3a2500", fg="#ffaa00")
+        terminal_log("  [marker mode ON — click map to place marker]\n")
+    else:
+        marker_mode_btn.config(text="○ Marker Mode", bg="#16213e", fg="#aaaacc")
+        terminal_log("  [marker mode OFF]\n")
+
+marker_mode_btn = tk.Checkbutton(
+    marker_sidebar, text="○ Marker Mode",
+    variable=_marker_mode, command=_toggle_marker_mode,
+    bg="#16213e", fg="#aaaacc", selectcolor="#3a2500",
+    activebackground="#16213e", activeforeground="#ffaa00",
+    font=("Courier New", 8, "bold"), relief=tk.FLAT,
+    indicatoron=False, padx=6, pady=3
+)
+marker_mode_btn.pack(fill=tk.X, padx=6, pady=(0, 4))
+
+# Label entry and color picker
+marker_input_frame = tk.Frame(marker_sidebar, bg="#0d0d1a")
+marker_input_frame.pack(fill=tk.X, padx=6, pady=2)
+
+tk.Label(marker_input_frame, text="Label:", bg="#0d0d1a", fg="#aaaacc",
+         font=("Courier New", 8)).pack(anchor="w")
+marker_label_var = tk.StringVar(value="Object")
+marker_label_entry = tk.Entry(marker_input_frame, textvariable=marker_label_var,
+                               bg="#16213e", fg="#ffdd00", insertbackground="#ffdd00",
+                               font=("Courier New", 9), relief=tk.FLAT, width=16)
+marker_label_entry.pack(fill=tk.X, pady=(1, 4))
+
+# Color selector
+MARKER_COLORS = ["#ffaa00", "#ff4444", "#44ff88", "#44aaff",
+                 "#ff44ff", "#ffffff", "#ffdd00", "#ff8844"]
+_marker_color = tk.StringVar(value=MARKER_COLORS[0])
+
+color_row = tk.Frame(marker_input_frame, bg="#0d0d1a")
+color_row.pack(fill=tk.X, pady=(0, 4))
+tk.Label(color_row, text="Color:", bg="#0d0d1a", fg="#aaaacc",
+         font=("Courier New", 8)).pack(side=tk.LEFT)
+
+_color_btns = []
+for _c in MARKER_COLORS:
+    _b = tk.Button(color_row, bg=_c, width=2, relief=tk.FLAT,
+                   command=lambda col=_c: _marker_color.set(col))
+    _b.pack(side=tk.LEFT, padx=1)
+    _color_btns.append(_b)
+
+tk.Frame(marker_sidebar, bg="#333344", height=1).pack(fill=tk.X, padx=6, pady=4)
+
+# Marker list
+tk.Label(marker_sidebar, text="Placed Markers:", bg="#0d0d1a", fg="#aaaacc",
+         font=("Courier New", 8)).pack(anchor="w", padx=8)
+
+marker_list_frame = tk.Frame(marker_sidebar, bg="#0d0d1a")
+marker_list_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=2)
+
+marker_listbox = tk.Listbox(marker_list_frame,
+                             bg="#0d0d1a", fg="#ffaa00",
+                             selectbackground="#3a2500",
+                             font=("Courier New", 8), relief=tk.FLAT,
+                             activestyle="none", highlightthickness=0)
+marker_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+_ml_scroll = tk.Scrollbar(marker_list_frame, command=marker_listbox.yview,
+                           bg="#0d0d1a", troughcolor="#16213e", relief=tk.FLAT)
+_ml_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+marker_listbox.config(yscrollcommand=_ml_scroll.set)
+
+def _refresh_marker_list():
+    marker_listbox.delete(0, tk.END)
+    for i, m in enumerate(map_markers):
+        marker_listbox.insert(tk.END, f"  {i+1}. {m['label']}  ({m['x']:.0f},{m['y']:.0f})")
+        marker_listbox.itemconfig(i, fg=m['color'])
+
+def _delete_selected_marker():
+    sel = marker_listbox.curselection()
+    if not sel:
+        return
+    idx = sel[0]
+    if 0 <= idx < len(map_markers):
+        removed = map_markers.pop(idx)
+        terminal_log(f"  [marker deleted: {removed['label']}]\n")
+        _refresh_marker_list()
+        draw_map()
+
+def _clear_all_markers():
+    map_markers.clear()
+    _refresh_marker_list()
+    draw_map()
+    terminal_log("  [all markers cleared]\n")
+
+marker_btn_row = tk.Frame(marker_sidebar, bg="#0d0d1a")
+marker_btn_row.pack(fill=tk.X, padx=6, pady=4)
+
+tk.Button(marker_btn_row, text="Delete Sel.", command=_delete_selected_marker,
+          bg="#3a1010", fg="#ff8888", activebackground="#5a1818",
+          font=("Courier New", 8, "bold"), relief=tk.FLAT,
+          padx=4, pady=2).pack(side=tk.LEFT, padx=(0, 3))
+tk.Button(marker_btn_row, text="Clear All", command=_clear_all_markers,
+          bg="#3a1010", fg="#ff4444", activebackground="#5a1818",
+          font=("Courier New", 8, "bold"), relief=tk.FLAT,
+          padx=4, pady=2).pack(side=tk.LEFT)
 
 def style_map_ax():
     """Style the map axes with fixed field bounds and a boundary rectangle."""
@@ -697,7 +885,20 @@ def draw_map():
     map_ax.clear()
     style_map_ax()
 
-    # live robot marker
+    # ── Occupancy point cloud (drawn first, behind everything) ──────────────
+    if show_map_cloud.get() and occupancy_cloud:
+        ping_cx = [p[0] for p in occupancy_cloud if p[2] == 'ping']
+        ping_cy = [p[1] for p in occupancy_cloud if p[2] == 'ping']
+        ir_cx   = [p[0] for p in occupancy_cloud if p[2] == 'ir']
+        ir_cy   = [p[1] for p in occupancy_cloud if p[2] == 'ir']
+        if ping_cx:
+            map_ax.scatter(ping_cx, ping_cy, color="#44ddff", s=2,
+                           alpha=0.35, zorder=1, linewidths=0)
+        if ir_cx:
+            map_ax.scatter(ir_cx, ir_cy, color="#ff8844", s=1.5,
+                           alpha=0.25, zorder=1, linewidths=0)
+
+    # ── Live robot marker ───────────────────────────────────────────────────
     live_rad       = math.radians(live_heading)
     live_arrow_len = 20  # cm
     map_ax.annotate("",
@@ -709,7 +910,7 @@ def draw_map():
     map_ax.scatter(live_x, live_y, color="#00ffff", s=80, zorder=11,
                    edgecolors="#fff", linewidths=0.8, marker='^')
 
-    # bump indicator
+    # ── Bump indicator ──────────────────────────────────────────────────────
     if bump_left or bump_right:
         c = "#ff0000" if (bump_left and bump_right) else "#ffaa00"
         map_ax.scatter(live_x, live_y, color=c, s=140, zorder=12, alpha=0.6)
@@ -720,7 +921,7 @@ def draw_map():
             map_ax.text(live_x + 10, live_y, "R", color="#ff4444",
                         fontsize=10, zorder=13)
 
-    # ADC events
+    # ── ADC events ──────────────────────────────────────────────────────────
     want_adc_rays = show_adc_rays.get()
     want_adc_dots = show_adc_dots.get()
     if (want_adc_rays or want_adc_dots) and col_events:
@@ -736,68 +937,83 @@ def draw_map():
                             f"C{ev.sensor_id}", color=ADC_COLOR,
                             fontsize=6, fontfamily="Courier New", zorder=8)
 
-    if not scans:
-        _draw_legend()
-        map_canvas.draw()
-        return
-
-    xs = [s.x for s in scans]
-    ys = [s.y for s in scans]
-
+    # ── Path & scan data ────────────────────────────────────────────────────
     if show_path.get():
-        map_ax.plot(xs, ys, color=PATH_COLOR, linewidth=1.5,
-                    linestyle="--", alpha=0.7, zorder=1)
+        if len(path_history) >= 2:
+            px = [p[0] for p in path_history]
+            py = [p[1] for p in path_history]
+            map_ax.plot(px, py, color=PATH_COLOR, linewidth=1.5,
+                        linestyle="--", alpha=0.7, zorder=2)
+        if path_history:
+            map_ax.scatter(path_history[0][0], path_history[0][1],
+                           color="#ffdd00", s=50, zorder=5,
+                           edgecolors="#fff", linewidths=0.8, marker='s')
+            map_ax.text(path_history[0][0] + 5, path_history[0][1] + 5,
+                        "START", color="#ffdd00", fontsize=6,
+                        fontfamily="Courier New", zorder=6)
 
-    want_ping_rays = show_ping_rays.get()
-    want_ping_dots = show_ping_dots.get()
-    want_ir_rays   = show_ir_rays.get()
-    want_ir_dots   = show_ir_dots.get()
+    if scans:
+        want_ping_rays = show_ping_rays.get()
+        want_ping_dots = show_ping_dots.get()
+        want_ir_rays   = show_ir_rays.get()
+        want_ir_dots   = show_ir_dots.get()
 
-    for scan in scans:
-        ping_ex, ping_ey = [], []
-        ir_ex,   ir_ey   = [], []
+        for scan in scans:
+            ping_ex, ping_ey = [], []
+            ir_ex,   ir_ey   = [], []
 
-        for angle_deg, ping_cm, ir_raw in scan.data:
-            world_angle = math.radians(scan.heading + (angle_deg - 90))
+            for angle_deg, ping_cm, ir_raw in scan.data:
+                world_angle = math.radians(scan.heading + (angle_deg - 90))
 
-            ray_len = min(ping_cm, MAX_PING_RAY)  # ping_cm is already centimeters
-            ex = scan.x + ray_len * math.cos(world_angle)
-            ey = scan.y + ray_len * math.sin(world_angle)
-            ping_ex.append(ex); ping_ey.append(ey)
+                ray_len = min(ping_cm, MAX_PING_RAY)
+                ex = scan.x + ray_len * math.cos(world_angle)
+                ey = scan.y + ray_len * math.sin(world_angle)
+                ping_ex.append(ex); ping_ey.append(ey)
 
-            ir_len = ir_raw * IR_SCALE * MOVEMENT_SCALE
-            ix = scan.x + ir_len * math.cos(world_angle)
-            iy = scan.y + ir_len * math.sin(world_angle)
-            ir_ex.append(ix); ir_ey.append(iy)
+                ir_len = ir_raw * IR_SCALE * MOVEMENT_SCALE
+                ix = scan.x + ir_len * math.cos(world_angle)
+                iy = scan.y + ir_len * math.sin(world_angle)
+                ir_ex.append(ix); ir_ey.append(iy)
 
-            if want_ping_rays:
-                map_ax.plot([scan.x, ex], [scan.y, ey],
-                            color=PING_RAY_COLOR, linewidth=0.4, alpha=0.3, zorder=2)
-            if want_ir_rays:
-                map_ax.plot([scan.x, ix], [scan.y, iy],
-                            color=IR_RAY_COLOR, linewidth=0.3, alpha=0.2, zorder=2)
+                if want_ping_rays:
+                    map_ax.plot([scan.x, ex], [scan.y, ey],
+                                color=PING_RAY_COLOR, linewidth=0.4, alpha=0.3, zorder=3)
+                if want_ir_rays:
+                    map_ax.plot([scan.x, ix], [scan.y, iy],
+                                color=IR_RAY_COLOR, linewidth=0.3, alpha=0.2, zorder=3)
 
-        if want_ping_dots:
-            map_ax.scatter(ping_ex, ping_ey, color=PING_RAY_COLOR,
-                           s=4, alpha=0.6, zorder=3, linewidths=0)
-        if want_ir_dots:
-            map_ax.scatter(ir_ex, ir_ey, color=IR_RAY_COLOR,
-                           s=3, alpha=0.5, zorder=3, linewidths=0)
+            if want_ping_dots:
+                map_ax.scatter(ping_ex, ping_ey, color=PING_RAY_COLOR,
+                               s=4, alpha=0.6, zorder=4, linewidths=0)
+            if want_ir_dots:
+                map_ax.scatter(ir_ex, ir_ey, color=IR_RAY_COLOR,
+                               s=3, alpha=0.5, zorder=4, linewidths=0)
 
-        # heading arrow
-        arrow_len = 15  # cm
-        hdg_rad   = math.radians(scan.heading)
-        map_ax.annotate("",
-            xy=(scan.x + arrow_len * math.cos(hdg_rad),
-                scan.y + arrow_len * math.sin(hdg_rad)),
-            xytext=(scan.x, scan.y),
-            arrowprops=dict(arrowstyle="->", color="#ffdd00", lw=1.2),
-            zorder=4)
+            # heading arrow at scan position
+            arrow_len = 15
+            hdg_rad   = math.radians(scan.heading)
+            map_ax.annotate("",
+                xy=(scan.x + arrow_len * math.cos(hdg_rad),
+                    scan.y + arrow_len * math.sin(hdg_rad)),
+                xytext=(scan.x, scan.y),
+                arrowprops=dict(arrowstyle="->", color="#ffdd00", lw=1.2),
+                zorder=5)
+            map_ax.scatter(scan.x, scan.y, color=SCAN_DOT_COLOR,
+                           s=60, zorder=5, edgecolors="#fff", linewidths=0.5)
+            map_ax.text(scan.x + 5, scan.y + 5, f"#{scan.scan_number}",
+                        color="#e0e0e0", fontsize=7, fontfamily="Courier New", zorder=6)
 
-        map_ax.scatter(scan.x, scan.y, color=SCAN_DOT_COLOR,
-                       s=60, zorder=5, edgecolors="#fff", linewidths=0.5)
-        map_ax.text(scan.x + 5, scan.y + 5, f"#{scan.scan_number}",
-                    color="#e0e0e0", fontsize=7, fontfamily="Courier New", zorder=6)
+    # ── User markers ────────────────────────────────────────────────────────
+    if show_markers.get() and map_markers:
+        for m in map_markers:
+            col = m['color']
+            map_ax.scatter(m['x'], m['y'], color=col, s=120, zorder=15,
+                           edgecolors="#fff", linewidths=1.0, marker='*')
+            map_ax.text(m['x'] + 6, m['y'] + 6, m['label'],
+                        color=col, fontsize=7, fontfamily="Courier New",
+                        fontweight="bold", zorder=16,
+                        bbox=dict(boxstyle="round,pad=0.2", facecolor="#0d0d1a",
+                                  edgecolor=col, alpha=0.75, linewidth=0.8))
 
     _draw_legend()
     map_canvas.draw()
@@ -808,6 +1024,9 @@ def _draw_legend():
     from matplotlib.patches import Patch
 
     elems = []
+    if show_map_cloud.get() and occupancy_cloud:
+        elems.append(Patch(facecolor="#44ddff", alpha=0.5, label="Cloud(PING)"))
+        elems.append(Patch(facecolor="#ff8844", alpha=0.5, label="Cloud(IR)"))
     if show_path.get():
         elems.append(Line2D([0],[0], color=PATH_COLOR, lw=1.5,
                             linestyle="--", label="Path"))
@@ -818,10 +1037,32 @@ def _draw_legend():
     if show_adc_rays.get() or show_adc_dots.get():
         elems.append(Patch(facecolor=ADC_COLOR, edgecolor="#ff88ff",
                            alpha=0.6, label="ADC"))
+    if show_markers.get() and map_markers:
+        elems.append(Line2D([0],[0], marker='*', color='w', markerfacecolor='#ffaa00',
+                            markersize=8, label="Markers", linestyle='none'))
     if elems:
         map_ax.legend(handles=elems, loc="upper right",
                       facecolor="#1a1a2e", edgecolor="#333",
                       labelcolor="#aaa", fontsize=7)
+
+
+# ── Map click handler — place markers ──────────────────────────────────────
+def _on_map_click(event):
+    if not _marker_mode.get():
+        return
+    if event.inaxes != map_ax:
+        return
+    mx, my = event.xdata, event.ydata
+    if mx is None or my is None:
+        return
+    label = marker_label_var.get().strip() or "Object"
+    color = _marker_color.get()
+    map_markers.append(dict(x=mx, y=my, label=label, color=color))
+    terminal_log(f"  [marker added: '{label}' at ({mx:.1f}, {my:.1f})]\n")
+    _refresh_marker_list()
+    draw_map()
+
+map_fig.canvas.mpl_connect("button_press_event", _on_map_click)
 
 
 # ============================================================
@@ -1017,7 +1258,7 @@ def load_demo_scans():
 
     for movements, data in demo_scans:
         for cmd in movements:
-            apply_single_movement(cmd)
+            apply_single_movement(cmd)   # apply_single_movement already appends to path_history
         ingest_scan(data)
         scan_graph_data.append({
             "angles":    [d[0] for d in data],
@@ -1027,7 +1268,7 @@ def load_demo_scans():
         for sid in random.sample(range(1, 7), k=random.randint(2, 4)):
             ingest_col_event(sid, random.randint(400, 3800))
 
-# load_demo_scans()
+load_demo_scans()
 
 # ============================================================
 # KEYBOARD BINDINGS
