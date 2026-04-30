@@ -11,7 +11,11 @@
 #include "uart-interrupt.h"
 #include "movement.h"
 #include "string.h"
+#include <stdio.h>
 #include <math.h>
+
+#define LIGHT_BUMP_OBJECT_THRESHOLD 3500
+#define SENSOR_REPORT_TICKS 10
 
 volatile float map_x[10];
 volatile float map_y[10];
@@ -48,6 +52,72 @@ void sendBump(int l, int r)
     {
         uart_sendChar(sentString[i]);
         i++;
+    }
+}
+
+void sendCollision(int sensor_id, int value)
+{
+    char sentString[24];
+    sprintf(sentString, "\r\nCOL:%d,%d\r\n", sensor_id, value);
+
+    int i = 0;
+    while (sentString[i] != '\0')
+    {
+        uart_sendChar(sentString[i]);
+        i++;
+    }
+}
+
+static void report_adc_object_sensors(oi_t *sensor_data)
+{
+    static unsigned int lastMask = 0;
+    static int tick = 0;
+    unsigned int mask = 0;
+    int report = 0;
+
+    struct sensor_report
+    {
+        int id;
+        int value;
+        int active;
+    } sensors[] = {
+        {4,  sensor_data->lightBumpLeftSignal,        sensor_data->lightBumpLeftSignal        > LIGHT_BUMP_OBJECT_THRESHOLD},
+        {2,  sensor_data->lightBumpFrontLeftSignal,   sensor_data->lightBumpFrontLeftSignal   > LIGHT_BUMP_OBJECT_THRESHOLD},
+        {1,  sensor_data->lightBumpCenterLeftSignal,  sensor_data->lightBumpCenterLeftSignal  > LIGHT_BUMP_OBJECT_THRESHOLD},
+        {6,  sensor_data->lightBumpCenterRightSignal, sensor_data->lightBumpCenterRightSignal > LIGHT_BUMP_OBJECT_THRESHOLD},
+        {3,  sensor_data->lightBumpFrontRightSignal,  sensor_data->lightBumpFrontRightSignal  > LIGHT_BUMP_OBJECT_THRESHOLD},
+        {5,  sensor_data->lightBumpRightSignal,       sensor_data->lightBumpRightSignal       > LIGHT_BUMP_OBJECT_THRESHOLD},
+        {7,  sensor_data->cliffLeftSignal,            sensor_data->cliffLeft},
+        {8,  sensor_data->cliffFrontLeftSignal,       sensor_data->cliffFrontLeft},
+        {9,  sensor_data->cliffFrontRightSignal,      sensor_data->cliffFrontRight},
+        {10, sensor_data->cliffRightSignal,           sensor_data->cliffRight},
+    };
+
+    int i;
+    for (i = 0; i < (int)(sizeof(sensors) / sizeof(sensors[0])); i++)
+    {
+        if (sensors[i].active)
+        {
+            mask |= (1u << i);
+        }
+    }
+
+    tick++;
+    report = (mask != lastMask) || (mask != 0 && tick >= SENSOR_REPORT_TICKS);
+    if (!report)
+    {
+        return;
+    }
+
+    tick = 0;
+    lastMask = mask;
+
+    for (i = 0; i < (int)(sizeof(sensors) / sizeof(sensors[0])); i++)
+    {
+        if (sensors[i].active)
+        {
+            sendCollision(sensors[i].id, sensors[i].value);
+        }
     }
 }
 
@@ -230,6 +300,7 @@ void movement_update(oi_t *sensor_data)
     float angle1;
 
     oi_update(sensor_data);
+    report_adc_object_sensors(sensor_data);
 
     distance1 = sensor_data->distance;
     angle1 = sensor_data->angle * M_PI / 180.0;
@@ -262,6 +333,12 @@ void movement_update(oi_t *sensor_data)
         current_cmd = CMD_STOP;
 
         sendBump(bumpLeftNow, bumpRightNow);
+    }
+    else if (!bumpLeftNow && !bumpRightNow && (prevBumpLeft || prevBumpRight))
+    {
+        sendBump(prevBumpLeft, prevBumpRight);
+        prevBumpLeft = 0;
+        prevBumpRight = 0;
     }
 
     prevBumpLeft = bumpLeftNow;

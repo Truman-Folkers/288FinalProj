@@ -48,7 +48,7 @@ int scanStartAngle = 0;
 int scanEndAngle = 180;
 
 struct object objArr[10];
-char buffer[30];
+char buffer[128];
 
 //cyBOT_Scan_t scanData;
 char receivedChar;
@@ -58,7 +58,7 @@ int m;
 /*============================================= */
 
 // Function to send a string to PuTTY one character at a time
-void sendString(char *str)
+void sendString(const char *str)
 {
     int i = 0;
     while (str[i] != '\0')
@@ -66,6 +66,25 @@ void sendString(char *str)
         uart_sendChar(str[i]);
         i++;
     }
+}
+
+static float read_ping_cm(void)
+{
+    int timeout = 0;
+
+    ping_trigger();
+    while (g_state != DONE && timeout < 400000)
+    {
+        timeout++;
+    }
+
+    if (g_state != DONE)
+    {
+        g_state = LOW;
+        return 0.0;
+    }
+
+    return ping_getDistance();
 }
 typedef struct
 {
@@ -160,23 +179,7 @@ void scan_and_map(oi_t *sensor_data)
         servo_move(angle);
         timer_waitMillis(100);
 
-        ping_trigger();
-
-        int timeout = 0;
-        while (g_state != DONE && timeout < 400000)
-        {
-            timeout++;
-        }
-
-        if (g_state != DONE)
-        {
-            g_state = LOW;
-            // handle bad reading
-        }
-        else
-        {
-            pingDist = ping_getDistance();
-        }
+        pingDist = read_ping_cm();
 
         for (k = 0; k < 3; k++)
         {
@@ -293,9 +296,7 @@ void scan_and_map(oi_t *sensor_data)
         servo_move(objArr[i].angle);
         timer_waitMillis(200);
 
-        ping_trigger();
-        while (g_state != DONE) {}
-        objArr[i].distance_cm = ping_getDistance();
+        objArr[i].distance_cm = read_ping_cm();
     }
 
     int j;
@@ -303,6 +304,7 @@ void scan_and_map(oi_t *sensor_data)
     b = 1;
     if (numObj == 0)
     {
+        object_count = 0;
         sendString("\r\nNo objects found.\r\n");
         sendString("SCAN_END\n");
         return;
@@ -348,11 +350,18 @@ void scan_and_map(oi_t *sensor_data)
     }
 
     // make field map - CHECK VARS
+    object_count = 0;
+    smallest_object_num = 0;
     for (m = 0; m < numObj; m++)
     {
         float angle2 = objArr[m].angle * M_PI / 180.0;
         map_x[m] = objArr[m].distance_cm * cos(angle2) + robot_x;
         map_y[m] = objArr[m].distance_cm * sin(angle2) + robot_y;
+        object_count++;
+        if (objArr[m].number == smallestObj.number)
+        {
+            smallest_object_num = m;
+        }
     }
 
     /* Tell the GUI the scan is complete so it commits the readings. */

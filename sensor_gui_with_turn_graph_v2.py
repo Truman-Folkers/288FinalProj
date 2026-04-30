@@ -12,7 +12,7 @@ import re
 # ============================================================
 HOST = "192.168.1.1"
 PORT = 288
-MOVEMENT_SCALE = 0.1    # Robot MOV distance is millimeters; map units are centimeters.
+MOVEMENT_SCALE = 0.12    # Robot MOV distance is millimeters; map units are centimeters.
 
 # ============================================================
 # FIELD DIMENSIONS  — fixed arena size in cm
@@ -41,12 +41,16 @@ SEND_OOB_WARNING_TO_ROBOT = False  # Keep False: firmware uses 'o' for LEFT_90.
 # Change these once you know the physical mounting angles.
 # ============================================================
 ADC_SENSOR_ANGLES = {
-    1:   0,    # Sensor 1 — front center
-    2:  45,    # Sensor 2 — front left
-    3: -45,    # Sensor 3 — front right
-    4:  90,    # Sensor 4 — left side
-    5: -90,    # Sensor 5 — right side
-    6: 180,    # Sensor 6 — rear
+    1:  10,    # Light bump center left
+    2:  45,    # Light bump front left
+    3: -45,    # Light bump front right
+    4:  90,    # Light bump left side
+    5: -90,    # Light bump right side
+    6: -10,    # Light bump center right
+    7:  90,    # Cliff/bottom left
+    8:  35,    # Cliff/bottom front left
+    9: -35,    # Cliff/bottom front right
+    10: -90,   # Cliff/bottom right
 }
 
 # ADC distance scaling: the dot is projected (adc_value * ADC_DIST_SCALE) cm
@@ -67,7 +71,7 @@ recv_buffer = ""
 
 # Keep True if you want the map to move immediately when you click buttons.
 # Set False after firmware MOV: telemetry is stable to avoid double-counting.
-LOCAL_DEAD_RECKONING_ON_BUTTON_PRESS = True
+LOCAL_DEAD_RECKONING_ON_BUTTON_PRESS = False
 
 # Debounce repeated/overlapping keypresses so a held key does not spam UART.
 COMMAND_COOLDOWN = 0.08  # seconds

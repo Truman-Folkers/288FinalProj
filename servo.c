@@ -79,7 +79,7 @@ void servo_move(uint16_t degrees)
     TIMER1_TBPMR_R = (match_value >> 16) & 0xFF;
     TIMER1_TBMATCHR_R = match_value & 0xFFFF;
 
-    timer_waitMillis(400);
+    timer_waitMillis(50);
 }
 
 

@@ -206,8 +206,8 @@ void UART1_Handler(void)
                 current_cmd = CMD_RIGHT_90;
                 break;
             default:
+                // Ignore line endings/noise so a stray byte does not cancel motion.
                 returnChar = ' ';
-                current_cmd = CMD_STOP;
                 break;
             }
                 }

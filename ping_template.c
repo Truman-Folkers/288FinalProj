@@ -75,6 +75,8 @@ void ping_init (void){
 void ping_trigger (void){
 
     g_state = LOW;
+    g_start_time = 0;
+    g_end_time = 0;
 
     // Disable timer and disable timer interrupt
     TIMER3_CTL_R &= ~0x100;
@@ -88,12 +90,12 @@ void ping_trigger (void){
 
     //write 0,1,0 to PB3 to trigger start pulse
     GPIO_PORTB_DATA_R &= ~0x08;
+    timer_waitMicros(2);
 
     GPIO_PORTB_DATA_R |= 0X08;
-    timer_waitMicros(5);
+    timer_waitMicros(10);
 
     GPIO_PORTB_DATA_R &= ~0x08;
-    timer_waitMicros(750);
 
     // Re-enable alternate function, timer interrupt, and timer
     TIMER3_ICR_R |= 0x400;

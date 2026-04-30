@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import math
 import time
+import re
 
 
 # ============================================================
@@ -12,7 +13,7 @@ import time
 # ============================================================
 HOST = "192.168.1.1"
 PORT = 288
-MOVEMENT_SCALE = 0.125  # 1 unit on map = 1 cm; adjust once real scale is known
+MOVEMENT_SCALE = 0.1    # Robot MOV distance is millimeters; map units are centimeters.
 
 last_sent = {}
 COMMAND_COOLDOWN = 0.08  # seconds
@@ -30,6 +31,7 @@ FIELD_H = 243   # cm — vertical   (Y axis, 0 at top, -FIELD_H at bottom)
 
 # Distance from any wall (cm) that triggers the 'o' warning to the robot
 OOB_THRESHOLD = 15   # cm
+SEND_OOB_WARNING_TO_ROBOT = False  # Firmware uses 'o' for LEFT_90.
 
 # ============================================================
 # ADC SENSOR ANGLES  — degrees relative to robot heading
@@ -43,12 +45,16 @@ OOB_THRESHOLD = 15   # cm
 # Change these once you know the physical mounting angles.
 # ============================================================
 ADC_SENSOR_ANGLES = {
-    1:   0,    # Sensor 1 — front center
-    2:  45,    # Sensor 2 — front left
-    3: -45,    # Sensor 3 — front right
-    4:  90,    # Sensor 4 — left side
-    5: -90,    # Sensor 5 — right side
-    6: 180,    # Sensor 6 — rear
+    1:  10,    # Light bump center left
+    2:  45,    # Light bump front left
+    3: -45,    # Light bump front right
+    4:  90,    # Light bump left side
+    5: -90,    # Light bump right side
+    6: -10,    # Light bump center right
+    7:  90,    # Cliff/bottom left
+    8:  35,    # Cliff/bottom front left
+    9: -35,    # Cliff/bottom front right
+    10: -90,   # Cliff/bottom right
 }
 
 # ADC distance scaling: the dot is projected (adc_value * ADC_DIST_SCALE) cm
@@ -150,9 +156,20 @@ class ColEvent:
 # ============================================================
 def parse_movement(cmd):
     cmd = cmd.strip().lower()
-    direction = cmd[-1]
-    value = float(cmd[:-1])
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([fblr])", cmd)
+    if not m:
+        raise ValueError(f"Bad movement command: {cmd!r}")
+    value = float(m.group(1))
+    direction = m.group(2)
     return value, direction
+
+
+def extract_movement_from_packet(packet):
+    packet = packet.strip().lower()
+    m = re.search(r"(\d+(?:\.\d+)?)([fblr])", packet)
+    if not m:
+        return None
+    return m.group(1) + m.group(2)
 
 
 def apply_movements(start_x, start_y, start_heading, movements):
@@ -237,7 +254,7 @@ _oob_warning_sent = False  # True while robot is within OOB_THRESHOLD of a wall
 def _check_bounds():
     """
     Called after every live pose update.
-    - If the robot is within OOB_THRESHOLD of any wall, send 'o' once.
+    - If the robot is within OOB_THRESHOLD of any wall, warn once.
     - Resets the sent-flag when the robot moves back into safe territory.
     """
     global _oob_warning_sent
@@ -247,12 +264,12 @@ def _check_bounds():
             live_y < -(FIELD_H - OOB_THRESHOLD))
 
     if near and not _oob_warning_sent:
-        if sock:
+        if SEND_OOB_WARNING_TO_ROBOT and sock:
             try:
-                sock.sendall(b'o')
+                sock.sendall(b'!')
             except Exception:
                 pass
-        terminal.insert(tk.END, "  [WARNING] Near boundary — sent: o\n")
+        terminal.insert(tk.END, "  [WARNING] Near boundary on map\n")
         terminal.see(tk.END)
         _oob_warning_sent = True
     elif not near and _oob_warning_sent:
@@ -343,11 +360,11 @@ def move_left():
 
 def turn_right_90():
     if sock: sock.sendall(b'p')
-    terminal.insert(tk.END, "Sent: a\n"); terminal.see(tk.END)
+    terminal.insert(tk.END, "Sent: p\n"); terminal.see(tk.END)
 
 def turn_left_90():
     if sock: sock.sendall(b'o')
-    terminal.insert(tk.END, "Sent: a\n"); terminal.see(tk.END)
+    terminal.insert(tk.END, "Sent: o\n"); terminal.see(tk.END)
 
 
 def stop():
@@ -600,7 +617,7 @@ def draw_map():
 
     # live robot marker
     live_rad       = math.radians(live_heading)
-    live_arrow_len = 20 * MOVEMENT_SCALE
+    live_arrow_len = 20
     map_ax.annotate("",
         xy=(live_x + live_arrow_len * math.cos(live_rad),
             live_y + live_arrow_len * math.sin(live_rad)),
@@ -661,7 +678,7 @@ def draw_map():
         for angle_deg, ping_cm, ir_raw in scan.data:
             world_angle = math.radians(scan.heading + (angle_deg - 90))
 
-            ray_len = min(ping_cm, MAX_PING_RAY) * MOVEMENT_SCALE
+            ray_len = min(ping_cm, MAX_PING_RAY)
             ex = scan.x + ray_len * math.cos(world_angle)
             ey = scan.y + ray_len * math.sin(world_angle)
             ping_ex.append(ex); ping_ey.append(ey)
@@ -686,7 +703,7 @@ def draw_map():
                            s=3, alpha=0.5, zorder=3, linewidths=0)
 
         # heading arrow
-        arrow_len = 15 * MOVEMENT_SCALE
+        arrow_len = 15
         hdg_rad   = math.radians(scan.heading)
         map_ax.annotate("",
             xy=(scan.x + arrow_len * math.cos(hdg_rad),
@@ -787,10 +804,12 @@ def update_data():
 
             # MOV:
             if line.startswith("MOV:"):
-                cmd = line[4:].strip()
-                apply_single_movement(cmd)
-                terminal.insert(tk.END, f"  [movement applied: {cmd}]\n")
-                terminal.see(tk.END)
+                raw_cmd = line[4:].strip()
+                cmd = extract_movement_from_packet(raw_cmd)
+                if cmd is not None:
+                    apply_single_movement(cmd)
+                    terminal.insert(tk.END, f"  [movement applied: {cmd}]\n")
+                    terminal.see(tk.END)
 
             # COL: — ADC sensor reading
             # Format: COL:<sensor_id>,<adc_value>  e.g. "COL:2,1540"
