@@ -53,9 +53,11 @@ void servo_init(void)
     TIMER1_TBPR_R = (period >> 16) & 0xFF;
     TIMER1_TBILR_R = period & 0xFFFF;
 
-    // set initial pulse width
-    TIMER1_TBPMR_R = (left_cal_value >> 16) & 0xFF;
-    TIMER1_TBMATCHR_R = left_cal_value & 0xFFFF;
+    uint32_t initial_pulse_width = left_cal_value;
+    uint32_t initial_match_value = period - initial_pulse_width;
+
+    TIMER1_TBPMR_R = (initial_match_value >> 16) & 0xFF;
+    TIMER1_TBMATCHR_R = initial_match_value & 0xFFFF;
 
     // enable Timer1B
     TIMER1_CTL_R |= 0x00000100;
@@ -77,7 +79,7 @@ void servo_move(uint16_t degrees)
     TIMER1_TBPMR_R = (match_value >> 16) & 0xFF;
     TIMER1_TBMATCHR_R = match_value & 0xFFFF;
 
-    timer_waitMillis(800);
+    timer_waitMillis(400);
 }
 
 
