@@ -69,17 +69,27 @@ sock.setblocking(False)
 
 recv_buffer = ""
 
-# Keep True if you want the map to move immediately when you click buttons.
-# Set False after firmware MOV: telemetry is stable to avoid double-counting.
+# Firmware owns pose with encoder distance + BNO055 heading.
 LOCAL_DEAD_RECKONING_ON_BUTTON_PRESS = False
 
 # Debounce repeated/overlapping keypresses so a held key does not spam UART.
 COMMAND_COOLDOWN = 0.08  # seconds
 _last_sent = {}
-
-# Continuous turns do not have a known angle locally, so the GUI should not
-# rotate the map for move_left()/move_right() unless the robot sends MOV:<angle>l/r.
-# The fixed 90-degree functions below do have known angles and can update the map.
+_active_movement_key = None
+USE_COMPACT_COMMANDS = True
+COMPACT_COMMANDS = {
+    "START_FORWARD": "w",
+    "START_BACKWARD": "s",
+    "START_LEFT": "a",
+    "START_RIGHT": "d",
+    "STOP": "x",
+    "TURN_LEFT:90": "o",
+    "TURN_RIGHT:90": "p",
+    "SCAN": "m",
+    "SCAN_LEFT": "n",
+    "SCAN_RIGHT": "l",
+    "h": "h",
+}
 
 
 # ============================================================
@@ -354,16 +364,16 @@ BTN_STYLE = dict(bg="#16213e", fg="#e0e0e0", activebackground="#0f3460",
                  font=("Courier New", 9, "bold"), padx=8, pady=3)
 
 def start_scan():
-    _send_command(b'm', 'm')
+    _send_command("SCAN", "scan")
 
 def stop_scan():
-    _send_command(b'h', 'h')
+    _send_command("h", "stop_scan")
 
 def start_zero_to_ninety_scan():
-    _send_command(b'n', 'n')
+    _send_command("SCAN_LEFT", "scan_left")
 
 def start_ninety_to_oneeighty_scan():
-    _send_command(b'l', 'l')
+    _send_command("SCAN_RIGHT", "scan_right")
 
 def clear_graph():
     scan_graph_data.clear()
@@ -382,18 +392,12 @@ def reset_map():
     ax1.clear(); ax2.clear()
     style_axes(); graph_canvas.draw(); draw_map()
 
-def _send_command(byte_cmd, label, local_movement=None):
-    """
-    Send exactly one command byte to the robot.
-
-    Do NOT add '\n'. Your TM4C interrupt handler expects single-character
-    commands like w/s/a/d/x/m/h/n/l/o/p. Newlines can hit the default case
-    in the ISR and stop the robot.
-    """
+def _send_command(command, label=None):
+    """Send one newline-terminated high-level command to the firmware."""
     now = time.time()
+    label = label or command
 
-    # Always allow stop through immediately. Debounce everything else.
-    if label != 'x':
+    if command != "STOP":
         last = _last_sent.get(label, 0)
         if now - last < COMMAND_COOLDOWN:
             return
@@ -404,12 +408,14 @@ def _send_command(byte_cmd, label, local_movement=None):
             terminal_log(f"[ERROR] Socket is None. Could not send: {label}\n")
             return
 
-        # Temporarily use blocking mode so one-byte commands leave cleanly.
+        wire_command = COMPACT_COMMANDS.get(command, command) if USE_COMPACT_COMMANDS else command
+        suffix = "" if USE_COMPACT_COMMANDS and wire_command in COMPACT_COMMANDS.values() else "\r\n"
+        payload = (wire_command + suffix).encode("ascii")
         sock.setblocking(True)
-        sock.sendall(byte_cmd)
+        sock.sendall(payload)
         sock.setblocking(False)
 
-        terminal_log(f"Sent byte: {byte_cmd!r} ({label})\n")
+        terminal_log(f"Sent: {command} [{wire_command!r}]\n")
 
     except Exception as e:
         terminal_log(f"[SEND ERROR] {label}: {e}\n")
@@ -420,47 +426,32 @@ def _send_command(byte_cmd, label, local_movement=None):
             pass
         return
 
-    if LOCAL_DEAD_RECKONING_ON_BUTTON_PRESS and local_movement:
-        try:
-            apply_single_movement(local_movement)
-            terminal_log(f"  [local movement applied: {local_movement}]\n")
-        except ValueError as e:
-            terminal_log(f"  [local movement ignored: {e}]\n")
-
 
 def move_forward():
-    # Keep this distance synced with whatever the robot firmware does for 'w'.
-    _send_command(b'w', 'w', '50f')
+    _send_command("START_FORWARD", "forward")
 
 
 def move_backward():
-    # Keep this distance synced with whatever the robot firmware does for 's'.
-    _send_command(b's', 's', '50b')
+    _send_command("START_BACKWARD", "backward")
 
 
 def move_right():
-    # Continuous right turn: send only. The GUI cannot know the angle unless
-    # the robot sends back something like MOV:12r or MOV:90r.
-    _send_command(b'd', 'd')
+    _send_command("START_RIGHT", "right")
 
 
 def move_left():
-    # Continuous left turn: send only. The GUI cannot know the angle unless
-    # the robot sends back something like MOV:12l or MOV:90l.
-    _send_command(b'a', 'a')
+    _send_command("START_LEFT", "left")
 
 
 def turn_right_90():
-    # Fixed 90-degree right turn: safe to dead-reckon on the map.
-    _send_command(b'p', 'p')
+    _send_command("TURN_RIGHT:90", "turn_right_90")
 
 
 def turn_left_90():
-    # Fixed 90-degree left turn: safe to dead-reckon on the map.
-    _send_command(b'o', 'o')
+    _send_command("TURN_LEFT:90", "turn_left_90")
 
 def stop():
-    _send_command(b'x', 'x')
+    _send_command("STOP", "stop")
 
 tk.Button(btn_frame, text="Start Scan",        command=start_scan,                     **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Start 0-90 Scan",   command=start_zero_to_ninety_scan,      **BTN_STYLE).pack(side=tk.LEFT, padx=3)
@@ -932,7 +923,7 @@ def redraw_graphs():
 
 
 def update_data():
-    global recv_buffer, _in_scan
+    global recv_buffer, _in_scan, live_x, live_y, live_heading
 
     if sock:
         try:
@@ -953,8 +944,21 @@ def update_data():
             terminal.insert(tk.END, line + "\n")
             terminal.see(tk.END)
 
-            # MOV:
-            if line.startswith("MOV:"):
+            # POS: firmware pose from encoder distance + BNO055 heading.
+            if line.startswith("POS:"):
+                parts = line[4:].split(',')
+                if len(parts) == 3:
+                    try:
+                        live_x = float(parts[0].strip())
+                        live_y = float(parts[1].strip())
+                        live_heading = float(parts[2].strip()) % 360
+                        _check_bounds()
+                        draw_map()
+                    except ValueError:
+                        terminal_log(f"  [ignored bad POS packet: {line!r}]\n")
+
+            # MOV: retained as a fallback for older firmware.
+            elif line.startswith("MOV:"):
                 raw_cmd = line[4:].strip()
                 clean_cmd = extract_movement_from_packet(raw_cmd)
 
@@ -1102,18 +1106,41 @@ def load_demo_scans():
 # KEYBOARD BINDINGS
 # ============================================================
 def on_key_press(event):
+    global _active_movement_key
     key = event.keysym.lower()
-    if   key == 'w':             move_forward()
-    elif key == 's':             move_backward()
-    elif key == 'a':             move_left()
-    elif key == 'd':             move_right()
-    elif key == 'p':             turn_right_90()
-    elif key == 'o':             turn_left_90()
-    elif key in ('x', 'space'): stop()
-    elif key == 'm':             start_scan()
-    elif key == 'h':             stop_scan()
+    movement_keys = {
+        'w': move_forward,
+        's': move_backward,
+        'a': move_left,
+        'd': move_right,
+    }
+
+    if key in movement_keys:
+        if _active_movement_key is None:
+            _active_movement_key = key
+            movement_keys[key]()
+    elif key == 'p':
+        turn_right_90()
+    elif key == 'o':
+        turn_left_90()
+    elif key in ('x', 'space'):
+        _active_movement_key = None
+        stop()
+    elif key == 'm':
+        start_scan()
+    elif key == 'h':
+        stop_scan()
+
+
+def on_key_release(event):
+    global _active_movement_key
+    key = event.keysym.lower()
+    if key == _active_movement_key:
+        _active_movement_key = None
+        stop()
 
 root.bind("<KeyPress>", on_key_press)
+root.bind("<KeyRelease>", on_key_release)
 root.focus_set()
 
 # ============================================================

@@ -72,6 +72,22 @@ sock.connect((HOST, PORT))
 sock.setblocking(False)
 
 recv_buffer = ""
+_last_sent = {}
+_active_movement_key = None
+USE_COMPACT_COMMANDS = True
+COMPACT_COMMANDS = {
+    "START_FORWARD": "w",
+    "START_BACKWARD": "s",
+    "START_LEFT": "a",
+    "START_RIGHT": "d",
+    "STOP": "x",
+    "TURN_LEFT:90": "o",
+    "TURN_RIGHT:90": "p",
+    "SCAN": "m",
+    "SCAN_LEFT": "n",
+    "SCAN_RIGHT": "l",
+    "h": "h",
+}
 
 # ============================================================
 # SCAN CLASS
@@ -317,20 +333,16 @@ BTN_STYLE = dict(bg="#16213e", fg="#e0e0e0", activebackground="#0f3460",
                  font=("Courier New", 9, "bold"), padx=8, pady=3)
 
 def start_scan():
-    if sock: sock.sendall(b'm')
-    terminal.insert(tk.END, "Sent: m\n"); terminal.see(tk.END)
+    _send_command("SCAN", "scan")
 
 def stop_scan():
-    if sock: sock.sendall(b'h')
-    terminal.insert(tk.END, "Sent: h\n"); terminal.see(tk.END)
+    _send_command("h", "stop_scan")
 
 def start_zero_to_ninety_scan():
-    if sock: sock.sendall(b'n')
-    terminal.insert(tk.END, "Sent: n\n"); terminal.see(tk.END)
+    _send_command("SCAN_LEFT", "scan_left")
 
 def start_ninety_to_oneeighty_scan():
-    if sock: sock.sendall(b'l')
-    terminal.insert(tk.END, "Sent: l\n"); terminal.see(tk.END)
+    _send_command("SCAN_RIGHT", "scan_right")
 
 def clear_graph():
     global live_x, live_y, live_heading, _oob_warning_sent
@@ -342,34 +354,55 @@ def clear_graph():
     ax1.clear(); ax2.clear()
     style_axes(); graph_canvas.draw(); draw_map()
 
+def _send_command(command, label=None):
+    now = time.time()
+    label = label or command
+
+    if command != "STOP":
+        last = _last_sent.get(label, 0)
+        if now - last < COMMAND_COOLDOWN:
+            return
+        _last_sent[label] = now
+
+    try:
+        wire_command = COMPACT_COMMANDS.get(command, command) if USE_COMPACT_COMMANDS else command
+        suffix = "" if USE_COMPACT_COMMANDS and wire_command in COMPACT_COMMANDS.values() else "\r\n"
+        if sock:
+            sock.setblocking(True)
+            sock.sendall((wire_command + suffix).encode("ascii"))
+            sock.setblocking(False)
+        terminal.insert(tk.END, f"Sent: {command} [{wire_command!r}]\n")
+        terminal.see(tk.END)
+    except Exception as e:
+        terminal.insert(tk.END, f"[SEND ERROR] {command}: {e}\n")
+        terminal.see(tk.END)
+        try:
+            if sock:
+                sock.setblocking(False)
+        except Exception:
+            pass
+
 def move_forward():
-    if sock: sock.sendall(b'w')
-    terminal.insert(tk.END, "Sent: w\n"); terminal.see(tk.END)
+    _send_command("START_FORWARD", "forward")
 
 def move_backward():
-    if sock: sock.sendall(b's')
-    terminal.insert(tk.END, "Sent: s\n"); terminal.see(tk.END)
+    _send_command("START_BACKWARD", "backward")
 
 def move_right():
-    if sock: sock.sendall(b'd')
-    terminal.insert(tk.END, "Sent: d\n"); terminal.see(tk.END)
+    _send_command("START_RIGHT", "right")
 
 def move_left():
-    if sock: sock.sendall(b'a')
-    terminal.insert(tk.END, "Sent: a\n"); terminal.see(tk.END)
+    _send_command("START_LEFT", "left")
 
 def turn_right_90():
-    if sock: sock.sendall(b'p')
-    terminal.insert(tk.END, "Sent: p\n"); terminal.see(tk.END)
+    _send_command("TURN_RIGHT:90", "turn_right_90")
 
 def turn_left_90():
-    if sock: sock.sendall(b'o')
-    terminal.insert(tk.END, "Sent: o\n"); terminal.see(tk.END)
+    _send_command("TURN_LEFT:90", "turn_left_90")
 
 
 def stop():
-    if sock: sock.sendall(b'x')
-    terminal.insert(tk.END, "Sent: x\n"); terminal.see(tk.END)
+    _send_command("STOP", "stop")
 
 tk.Button(btn_frame, text="Start Scan",        command=start_scan,                     **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Start 0-90 Scan",   command=start_zero_to_ninety_scan,      **BTN_STYLE).pack(side=tk.LEFT, padx=3)
@@ -781,7 +814,7 @@ def redraw_graphs():
 
 
 def update_data():
-    global recv_buffer, _in_scan
+    global recv_buffer, _in_scan, live_x, live_y, live_heading
 
     if sock:
         try:
@@ -802,8 +835,21 @@ def update_data():
             terminal.insert(tk.END, line + "\n")
             terminal.see(tk.END)
 
-            # MOV:
-            if line.startswith("MOV:"):
+            # POS: firmware pose from encoder distance + BNO055 heading.
+            if line.startswith("POS:"):
+                parts = line[4:].split(',')
+                if len(parts) == 3:
+                    try:
+                        live_x = float(parts[0].strip())
+                        live_y = float(parts[1].strip())
+                        live_heading = float(parts[2].strip()) % 360
+                        _check_bounds()
+                        draw_map()
+                    except ValueError:
+                        pass
+
+            # MOV: retained as a fallback for older firmware.
+            elif line.startswith("MOV:"):
                 raw_cmd = line[4:].strip()
                 cmd = extract_movement_from_packet(raw_cmd)
                 if cmd is not None:
@@ -939,16 +985,41 @@ def load_demo_scans():
 # KEYBOARD BINDINGS
 # ============================================================
 def on_key_press(event):
+    global _active_movement_key
     key = event.keysym.lower()
-    if   key == 'w':             move_forward()
-    elif key == 's':             move_backward()
-    elif key == 'a':             move_left()
-    elif key == 'd':             move_right()
-    elif key in ('x', 'space'): stop()
-    elif key == 'm':             start_scan()
-    elif key == 'h':             stop_scan()
+    movement_keys = {
+        'w': move_forward,
+        's': move_backward,
+        'a': move_left,
+        'd': move_right,
+    }
+
+    if key in movement_keys:
+        if _active_movement_key is None:
+            _active_movement_key = key
+            movement_keys[key]()
+    elif key == 'p':
+        turn_right_90()
+    elif key == 'o':
+        turn_left_90()
+    elif key in ('x', 'space'):
+        _active_movement_key = None
+        stop()
+    elif key == 'm':
+        start_scan()
+    elif key == 'h':
+        stop_scan()
+
+
+def on_key_release(event):
+    global _active_movement_key
+    key = event.keysym.lower()
+    if key == _active_movement_key:
+        _active_movement_key = None
+        stop()
 
 root.bind("<KeyPress>", on_key_press)
+root.bind("<KeyRelease>", on_key_release)
 root.focus_set()
 
 # ============================================================

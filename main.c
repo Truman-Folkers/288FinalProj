@@ -15,6 +15,7 @@
 #include "open_interface.h"
 #include "adc.h"
 #include "ping_template.h"
+#include "bno055.h"
 
 
 // variable initialization
@@ -57,6 +58,8 @@ int m;
 
 /*============================================= */
 
+void scan_and_map(oi_t *sensor_data);
+
 // Function to send a string to PuTTY one character at a time
 void sendString(const char *str)
 {
@@ -85,6 +88,112 @@ static float read_ping_cm(void)
     }
 
     return ping_getDistance();
+}
+
+static int get_uart_command(char *command, int command_len)
+{
+    int i;
+
+    if (!uart_command_ready)
+    {
+        return 0;
+    }
+
+    for (i = 0; i < command_len - 1 && uart_command_buffer[i] != '\0'; i++)
+    {
+        command[i] = uart_command_buffer[i];
+    }
+    command[i] = '\0';
+
+    uart_command_ready = 0;
+    return 1;
+}
+
+static void run_scan_command(oi_t *sensor_data, int start_angle, int end_angle)
+{
+    scanStartAngle = start_angle;
+    scanEndAngle = end_angle;
+    current_cmd = CMD_STOP;
+    returnChar = ' ';
+    sendTelemetry();
+
+    scan_and_map(sensor_data);
+
+    sendString("\r\nScan Complete\r\n");
+    sendTelemetry();
+    returnChar = ' ';
+    lcd_clear();
+    lcd_printf("Done");
+}
+
+static void handle_uart_command(oi_t *sensor_data, const char *cmd)
+{
+    if (strcmp(cmd, "w") == 0 || strcmp(cmd, "START_FORWARD") == 0)
+    {
+        current_cmd = CMD_FORWARD;
+    }
+    else if (strcmp(cmd, "s") == 0 || strcmp(cmd, "START_BACKWARD") == 0)
+    {
+        current_cmd = CMD_BACKWARD;
+    }
+    else if (strcmp(cmd, "a") == 0 || strcmp(cmd, "START_LEFT") == 0)
+    {
+        current_cmd = CMD_LEFT;
+    }
+    else if (strcmp(cmd, "d") == 0 || strcmp(cmd, "START_RIGHT") == 0)
+    {
+        current_cmd = CMD_RIGHT;
+    }
+    else if (strcmp(cmd, "x") == 0 || strcmp(cmd, "STOP") == 0)
+    {
+        current_cmd = CMD_STOP;
+        oi_setWheels(0, 0);
+    }
+    else if (strcmp(cmd, "m") == 0 || strcmp(cmd, "SCAN") == 0)
+    {
+        run_scan_command(sensor_data, 0, 180);
+    }
+    else if (strcmp(cmd, "n") == 0 || strcmp(cmd, "SCAN_LEFT") == 0)
+    {
+        run_scan_command(sensor_data, 0, 95);
+    }
+    else if (strcmp(cmd, "l") == 0 || strcmp(cmd, "SCAN_RIGHT") == 0)
+    {
+        run_scan_command(sensor_data, 90, 180);
+    }
+    else if (strcmp(cmd, "h") == 0 || strcmp(cmd, "STOP_SCAN") == 0)
+    {
+        returnChar = 'h';
+        current_cmd = CMD_STOP;
+        oi_setWheels(0, 0);
+        sendString("\r\nDone!\r\n");
+    }
+    else if (strcmp(cmd, "o") == 0)
+    {
+        turn_left_imu(sensor_data, 90.0f);
+        current_cmd = CMD_STOP;
+    }
+    else if (strcmp(cmd, "p") == 0)
+    {
+        turn_right_imu(sensor_data, 90.0f);
+        current_cmd = CMD_STOP;
+    }
+    else if (strncmp(cmd, "TURN_LEFT:", 10) == 0)
+    {
+        turn_left_imu(sensor_data, (float)atof(cmd + 10));
+        current_cmd = CMD_STOP;
+    }
+    else if (strncmp(cmd, "TURN_RIGHT:", 11) == 0)
+    {
+        turn_right_imu(sensor_data, (float)atof(cmd + 11));
+        current_cmd = CMD_STOP;
+    }
+    else if (strncmp(cmd, "TURN_TO:", 8) == 0)
+    {
+        imu_target_heading = (float)atof(cmd + 8);
+        turn_to_heading_imu(sensor_data, imu_target_heading);
+        current_cmd = CMD_STOP;
+    }
 }
 typedef struct
 {
@@ -352,9 +461,16 @@ void scan_and_map(oi_t *sensor_data)
     // make field map - CHECK VARS
     object_count = 0;
     smallest_object_num = 0;
+    {
+        float heading = get_robot_heading_imu();
+        if (heading != BNO055_HEADING_INVALID)
+        {
+            robot_angle = heading * M_PI / 180.0f;
+        }
+    }
     for (m = 0; m < numObj; m++)
     {
-        float angle2 = objArr[m].angle * M_PI / 180.0;
+        float angle2 = robot_angle + ((objArr[m].angle - 90.0f) * M_PI / 180.0f);
         map_x[m] = objArr[m].distance_cm * cos(angle2) + robot_x;
         map_y[m] = objArr[m].distance_cm * sin(angle2) + robot_y;
         object_count++;
@@ -399,61 +515,26 @@ int main(void)
 
 //    servo_calibrate();
     ping_init();
+    if (!bno055_init())
+    {
+        lcd_printf("BNO055 fail");
+        timer_waitMillis(1000);
+    }
 
     lcd_printf("Send 'm'");
 
     while (1)
     {
+        char command[UART_COMMAND_BUFFER_SIZE];
 
-        // Receiving interrupt char
-//        while(receivedChar == lastChar){
-//            receivedChar = returnChar;
-//        }
-        receivedChar = returnChar;
-
-        if (receivedChar == 'm')
+        if (get_uart_command(command, UART_COMMAND_BUFFER_SIZE))
         {
-            // scan and map environment
-            scanStartAngle = 0;
-            scanEndAngle = 180;
-            scan_and_map(sensor_data);
-
-            sendString("\r\nScan Complete\r\n");
-            lcd_clear();
-            lcd_printf("Done");
-            returnChar = ' ';
+            handle_uart_command(sensor_data, command);
         }
-        else if (receivedChar == 'h')
+        else
         {
-            sendString("\r\nDone!\r\n");
-            returnChar = ' ';
-        }else if(receivedChar == 'n'){
-            // 0-90 scan
-            scanStartAngle = 0;
-            scanEndAngle = 95;
-            scan_and_map(sensor_data);
-
-            sendString("\r\nScan Complete\r\n");
-            lcd_clear();
-            lcd_printf("Done");
-            returnChar = ' ';
-
-        }else if(receivedChar == 'l'){
-            // 90-180 scan
-            scanStartAngle = 90;
-            scanEndAngle = 180;
-            scan_and_map(sensor_data);
-
-            sendString("\r\nScan Complete\r\n");
-            lcd_clear();
-            lcd_printf("Done");
-            returnChar = ' ';
-
-        }else{
             movement_update(sensor_data);
         }
-        lastChar = receivedChar;
-
     }
     oi_free(sensor_data); // free memory
 }

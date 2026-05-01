@@ -9,6 +9,7 @@
 #include "Timer.h"
 #include "open_interface.h"
 #include "uart-interrupt.h"
+#include "bno055.h"
 #include "movement.h"
 #include "string.h"
 #include <stdio.h>
@@ -16,6 +17,8 @@
 
 #define LIGHT_BUMP_OBJECT_THRESHOLD 2800
 #define SENSOR_REPORT_TICKS 10
+#define TELEMETRY_REPORT_TICKS 5
+#define MOVEMENT_LOOP_MS 20
 
 volatile float map_x[10];
 volatile float map_y[10];
@@ -26,6 +29,7 @@ volatile float robot_angle = 0;
 volatile int smallest_object_num = 0;
 volatile int object_count = 0;
 volatile movement_cmd_t current_cmd = CMD_STOP;
+volatile float imu_target_heading = 0.0f;
 volatile int bumpLeftSensed = 0;
 volatile int bumpRightSensed = 0;
 
@@ -46,6 +50,30 @@ void sendBump(int l, int r)
 {
     char sentString[20];
     sprintf(sentString, "\r\nBUMP:%d%d\r\n", l, r);
+
+    int i = 0;
+    while (sentString[i] != '\0')
+    {
+        uart_sendChar(sentString[i]);
+        i++;
+    }
+}
+
+void sendTelemetry(void)
+{
+    char sentString[48];
+    float heading = get_robot_heading_imu();
+
+    if (heading != BNO055_HEADING_INVALID)
+    {
+        robot_angle = heading * M_PI / 180.0f;
+    }
+    else
+    {
+        heading = robot_angle * 180.0f / M_PI;
+    }
+
+    sprintf(sentString, "\r\nPOS:%.2f,%.2f,%.2f\r\n", robot_x, robot_y, heading);
 
     int i = 0;
     while (sentString[i] != '\0')
@@ -155,37 +183,114 @@ double move_backward(oi_t *sensor_data, double distance_mm)
     return distance_moved;
 }
 
-double turn_left(oi_t *sensor_data, double degrees)
+float get_robot_heading_imu(void)
 {
-    double angle_robot = 0;
+    return bno055_read_heading();
+}
 
-    oi_setWheels(150, -150);
+float turn_to_heading_imu(oi_t *sensor_data, float target_heading)
+{
+    float current_heading;
+    float diff;
+    int elapsed_ms = 0;
 
-    while (angle_robot < degrees - 10.8) //degrees - 8 for CyBot 24
+    target_heading = bno055_normalize_angle(target_heading);
+    current_heading = get_robot_heading_imu();
+
+    if (current_heading == BNO055_HEADING_INVALID)
     {
-        oi_update(sensor_data);
-        angle_robot = angle_robot + sensor_data->angle;
+        oi_setWheels(0, 0);
+        return BNO055_HEADING_INVALID;
     }
 
-    sendMovement((int)90, 'l');
+    while (elapsed_ms < IMU_TURN_TIMEOUT_MS)
+    {
+        int speed;
+
+        oi_update(sensor_data);
+        report_adc_object_sensors(sensor_data);
+
+        if (sensor_data->bumpLeft || sensor_data->bumpRight)
+        {
+            oi_setWheels(0, 0);
+            current_cmd = CMD_STOP;
+            sendBump(sensor_data->bumpLeft, sensor_data->bumpRight);
+            sendTelemetry();
+            return get_robot_heading_imu();
+        }
+
+        current_heading = get_robot_heading_imu();
+        if (current_heading == BNO055_HEADING_INVALID)
+        {
+            oi_setWheels(0, 0);
+            return BNO055_HEADING_INVALID;
+        }
+
+        diff = bno055_angle_difference(current_heading, target_heading);
+
+        if (fabs(diff) <= IMU_TURN_TOLERANCE_DEG)
+        {
+            oi_setWheels(0, 0);
+            robot_angle = current_heading * M_PI / 180.0f;
+            sendTelemetry();
+            return current_heading;
+        }
+
+        speed = (fabs(diff) < 15.0f) ? 80 : 145;
+
+        if (diff > 0.0f)
+        {
+            oi_setWheels(speed, -speed);
+        }
+        else
+        {
+            oi_setWheels(-speed, speed);
+        }
+
+        timer_waitMillis(IMU_TURN_LOOP_MS);
+        elapsed_ms += IMU_TURN_LOOP_MS;
+    }
+
     oi_setWheels(0, 0);
+    sendTelemetry();
+    return get_robot_heading_imu();
+}
+
+float turn_left_imu(oi_t *sensor_data, float degrees)
+{
+    float start_heading = get_robot_heading_imu();
+
+    if (start_heading == BNO055_HEADING_INVALID)
+    {
+        oi_setWheels(0, 0);
+        return BNO055_HEADING_INVALID;
+    }
+
+    return turn_to_heading_imu(sensor_data, start_heading + degrees);
+}
+
+float turn_right_imu(oi_t *sensor_data, float degrees)
+{
+    float start_heading = get_robot_heading_imu();
+
+    if (start_heading == BNO055_HEADING_INVALID)
+    {
+        oi_setWheels(0, 0);
+        return BNO055_HEADING_INVALID;
+    }
+
+    return turn_to_heading_imu(sensor_data, start_heading - degrees);
+}
+
+double turn_left(oi_t *sensor_data, double degrees)
+{
+    turn_left_imu(sensor_data, (float)degrees);
     return degrees;
 }
 
 double turn_right(oi_t *sensor_data, double degrees)
 {
-    double two = 0 - degrees;
-    double angle_robot = 0;
-
-    oi_setWheels(-150, 150);
-
-    while (angle_robot > two + 12) //two + 10 for CyBot 24
-    {
-        oi_update(sensor_data);
-        angle_robot = angle_robot + sensor_data->angle;
-    }
-    sendMovement((int)90, 'r');
-    oi_setWheels(0, 0);
+    turn_right_imu(sensor_data, (float)degrees);
     return degrees;
 }
 
@@ -292,30 +397,31 @@ void avoidObjects(oi_t *sensor_data)
 
 void movement_update(oi_t *sensor_data)
 {
-    static int prevBumpLeft = 0;
-    static int prevBumpRight = 0;
+    static int bump_latched = 0;
+    static int telemetry_tick = 0;
 
     float distance1;
-    float angle1;
+    float heading;
 
     oi_update(sensor_data);
     report_adc_object_sensors(sensor_data);
 
     distance1 = sensor_data->distance;
-    angle1 = sensor_data->angle * M_PI / 180.0;
 
-    // Update robot position on map
-    robot_x += distance1 * cos(robot_angle);
-    robot_y += distance1 * sin(robot_angle);
-    robot_angle += angle1;
+    heading = get_robot_heading_imu();
+    if (heading != BNO055_HEADING_INVALID)
+    {
+        robot_angle = heading * M_PI / 180.0f;
+    }
 
-    // Keep robot_angle bounded
+    // Encoder distance updates position; IMU heading owns orientation.
+    robot_x += (distance1 / 10.0f) * cos(robot_angle);
+    robot_y += (distance1 / 10.0f) * sin(robot_angle);
+
     while (robot_angle > M_PI)
         robot_angle -= 2 * M_PI;
     while (robot_angle < -M_PI)
         robot_angle += 2 * M_PI;
-
-    static int bump_latched = 0;
 
     int bumpLeftNow = sensor_data->bumpLeft;
     int bumpRightNow = sensor_data->bumpRight;
@@ -363,30 +469,6 @@ void movement_update(oi_t *sensor_data)
 //        }
 
 
-    /*
-     * Report this tick's deltas straight to the GUI.
-     */
-    int d_mm  = (int)sensor_data->distance;
-    int a_deg = (int)sensor_data->angle;
-
-    if (d_mm > 0)        sendMovement( d_mm, 'f');
-    else if (d_mm < 0)   sendMovement(-d_mm, 'b');
-
-    if (current_cmd == CMD_LEFT)
-    {
-        if (a_deg > 0)
-        {
-            sendMovement(a_deg, 'l');
-        }
-    }
-    else if (current_cmd == CMD_RIGHT)
-    {
-        if (a_deg < 0)
-        {
-            sendMovement(-a_deg, 'r');
-        }
-    }
-
     switch (current_cmd)
     {
     case CMD_FORWARD:
@@ -406,12 +488,17 @@ void movement_update(oi_t *sensor_data)
         break;
 
     case CMD_RIGHT_90:
-        turn_right(sensor_data, 90);
+        turn_right_imu(sensor_data, 90.0f);
         current_cmd = CMD_STOP;
         break;
 
     case CMD_LEFT_90:
-        turn_left(sensor_data, 90);
+        turn_left_imu(sensor_data, 90.0f);
+        current_cmd = CMD_STOP;
+        break;
+
+    case CMD_TURN_TO_HEADING:
+        turn_to_heading_imu(sensor_data, imu_target_heading);
         current_cmd = CMD_STOP;
         break;
 
@@ -420,6 +507,15 @@ void movement_update(oi_t *sensor_data)
         oi_setWheels(0, 0);
         break;
     }
+
+    telemetry_tick++;
+    if (telemetry_tick >= TELEMETRY_REPORT_TICKS || current_cmd == CMD_STOP)
+    {
+        telemetry_tick = 0;
+        sendTelemetry();
+    }
+
+    timer_waitMillis(MOVEMENT_LOOP_MS);
 }
 
 //    // Handle bump sensors

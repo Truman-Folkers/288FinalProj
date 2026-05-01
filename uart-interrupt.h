@@ -24,6 +24,8 @@
 #ifndef PROJECT_H
 #define PROJECT_H
 
+#define UART_COMMAND_BUFFER_SIZE 40
+
 // Notice that interrupt.h provides library function prototypes for IntMasterEnable() and IntRegister()
 
 // The following externals are global variables defined in uart-interrupt.c for use with the interrupt handler.
@@ -33,6 +35,8 @@
 //extern volatile int receive_index; // index to keep track of characters in buffer
 extern volatile char command_byte; // byte value for special character used as a command
 extern volatile int command_flag; // flag to tell the main program a special command was received
+extern volatile char uart_command_buffer[UART_COMMAND_BUFFER_SIZE];
+extern volatile int uart_command_ready;
 
 // UART1 device initialization for CyBot to PuTTY
 void uart_interrupt_init(void);

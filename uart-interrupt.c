@@ -13,6 +13,7 @@
 
 #include <inc/tm4c123gh6pm.h>
 #include <stdint.h>
+#include <string.h>
 #include "uart-interrupt.h"
 #include <stdbool.h>
 #include "driverlib/interrupt.h"
@@ -22,6 +23,37 @@
 volatile char command_byte = -1; // byte value for special character used as a command
 volatile int command_flag = 0;   // flag to tell the main program a special command was received
 char returnChar;
+volatile char uart_command_buffer[UART_COMMAND_BUFFER_SIZE];
+volatile int uart_command_ready = 0;
+
+static char rx_command_buffer[UART_COMMAND_BUFFER_SIZE];
+static uint8_t rx_command_index = 0;
+
+static void publish_uart_command(const char *cmd)
+{
+    uint8_t i = 0;
+
+    if (uart_command_ready)
+    {
+        return;
+    }
+
+    while (cmd[i] != '\0' && i < UART_COMMAND_BUFFER_SIZE - 1)
+    {
+        uart_command_buffer[i] = cmd[i];
+        i++;
+    }
+
+    uart_command_buffer[i] = '\0';
+    uart_command_ready = 1;
+}
+
+static int is_legacy_command(char byte)
+{
+    return byte == 'w' || byte == 's' || byte == 'a' || byte == 'd' ||
+           byte == 'x' || byte == 'm' || byte == 'h' || byte == 'n' ||
+           byte == 'l' || byte == 'o' || byte == 'p';
+}
 
 void uart_interrupt_init(void)
 {
@@ -141,75 +173,40 @@ void UART1_Handler(void)
         byte_received = UART1_DR_R & 0xFF;
 //        uart_sendChar(byte_received);
 
-        // if byte received is a carriage return
-        if (byte_received == '\r')
+        if (byte_received == '\r' || byte_received == '\n' || byte_received == ';')
         {
-            // send a newline character back to PuTTY
-            uart_sendChar('\n');
+            if (rx_command_index > 0)
+            {
+                rx_command_buffer[rx_command_index] = '\0';
+                publish_uart_command(rx_command_buffer);
+                rx_command_index = 0;
+            }
         }
         else
         {
-            // AS NEEDED
-            // code to handle any other special characters
-            // code to update global shared variables
-            // DO NOT PUT TIME-CONSUMING CODE IN AN ISR
-
             if (byte_received == command_byte)
             {
                 command_flag = 1;
             }
 
-            switch ((char)byte_received)
+            if (is_legacy_command(byte_received) && rx_command_index == 0)
             {
-            case 'w':
                 returnChar = (char)byte_received;
-                current_cmd = CMD_FORWARD;
-                break;
-            case 's':
-                returnChar = (char)byte_received;
-                current_cmd = CMD_BACKWARD;
-                break;
-            case 'a':
-                returnChar = (char)byte_received;
-                current_cmd = CMD_LEFT;
-                break;
-            case 'd':
-                returnChar = (char)byte_received;
-                current_cmd = CMD_RIGHT;
-                break;
-            case 'x':
-                returnChar = (char)byte_received;
-                current_cmd = CMD_STOP;
-                break;
-            case 'm':
-                returnChar = (char)byte_received;
-                current_cmd = CMD_STOP;
-                break;
-            case 'h':
-                returnChar = (char)byte_received;
-                current_cmd = CMD_STOP;
-                break;
-            case 'n':
-                returnChar = (char)byte_received;
-                current_cmd = CMD_STOP;
-                break;
-            case 'l':
-                returnChar = (char)byte_received;
-                current_cmd = CMD_STOP;
-                break;
-            case 'o':
-                returnChar = (char)byte_received;
-                current_cmd = CMD_LEFT_90;
-                break;
-            case 'p':
-                returnChar = (char)byte_received;
-                current_cmd = CMD_RIGHT_90;
-                break;
-            default:
-                // Ignore line endings/noise so a stray byte does not cancel motion.
-                returnChar = ' ';
-                break;
+                rx_command_buffer[0] = byte_received;
+                rx_command_buffer[1] = '\0';
+                publish_uart_command(rx_command_buffer);
             }
+            else if (byte_received >= 32 && byte_received <= 126)
+            {
+                if (rx_command_index < UART_COMMAND_BUFFER_SIZE - 1)
+                {
+                    rx_command_buffer[rx_command_index++] = byte_received;
                 }
+                else
+                {
+                    rx_command_index = 0;
+                }
+            }
+        }
     }
 }
