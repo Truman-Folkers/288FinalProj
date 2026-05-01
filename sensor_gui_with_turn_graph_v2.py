@@ -462,12 +462,20 @@ def turn_left_90():
 def stop():
     _send_command(b'x', 'x')
 
+def send_scan():
+    _send_command(b'u', 'u')
+
+def send_extra_scan():
+    _send_command(b'v', 'v')
+
 tk.Button(btn_frame, text="Start Scan",        command=start_scan,                     **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Start 0-90 Scan",   command=start_zero_to_ninety_scan,      **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Start 90-180 Scan", command=start_ninety_to_oneeighty_scan, **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Stop Scan",         command=stop_scan,                      **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Clear Graph",       command=clear_graph,                    **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Reset",             command=reset_map,                      **BTN_STYLE).pack(side=tk.LEFT, padx=3)
+tk.Button(btn_frame, text="Send Scan",       command=send_scan,                    **BTN_STYLE).pack(side=tk.LEFT, padx=3)
+tk.Button(btn_frame, text="Send Extra Scan",             command=send_extra_scan,        **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Right 90",  command=turn_right_90,  **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
 tk.Button(btn_frame, text="Left 90", command=turn_left_90, **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
 tk.Button(btn_frame, text="↑ Forward",  command=move_forward,  **BTN_STYLE).pack(side=tk.RIGHT, padx=3)

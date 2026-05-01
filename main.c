@@ -449,6 +449,14 @@ int main(void)
             lcd_printf("Done");
             returnChar = ' ';
 
+        }else if(receivedChar == 'u'){
+            lcd_clear();
+            lcd_printf("Scanning at designated location");
+            returnChar = ' ';
+        }else if(receivedChar == 'v'){
+            lcd_clear();
+            lcd_printf("Scanning at extra location");
+            returnChar = ' ';
         }else{
             movement_update(sensor_data);
         }

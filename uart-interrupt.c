@@ -205,6 +205,14 @@ void UART1_Handler(void)
                 returnChar = (char)byte_received;
                 current_cmd = CMD_RIGHT_90;
                 break;
+            case 'u':
+                returnChar = (char)byte_received;
+                current_cmd = CMD_STOP;
+                break;
+            case 'v':
+                returnChar = (char)byte_received;
+                current_cmd = CMD_STOP;
+                break;
             default:
                 // Ignore line endings/noise so a stray byte does not cancel motion.
                 returnChar = ' ';
