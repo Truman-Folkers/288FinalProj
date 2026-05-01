@@ -73,8 +73,7 @@ void sendTelemetry(void)
         heading = robot_angle * 180.0f / M_PI;
     }
 
-    sprintf(sentString, "\r\nPOS:%.2f,%.2f,%.2f\r\n", robot_x, robot_y, heading);
-
+    sprintf(sentString, "\r\nIMU:%.1f\r\n", heading);
     int i = 0;
     while (sentString[i] != '\0')
     {
