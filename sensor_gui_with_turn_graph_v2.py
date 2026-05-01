@@ -16,14 +16,23 @@ MOVEMENT_SCALE = 0.12    # Robot MOV distance is millimeters; map units are cent
 
 # ============================================================
 # FIELD DIMENSIONS  — fixed arena size in cm
-# Origin (0, 0) = top-left corner.
-# Robot starts here facing DOWN → heading = -90 (270°).
+# Origin (0, 0) = top-left corner of the field.
+# Robot starts at (ROBOT_RADIUS, -ROBOT_RADIUS) so its body is fully inside.
 # X grows rightward  (0 → FIELD_W).
 # Y grows downward   (0 → -FIELD_H) to match the heading convention
 #   where -90° points in the -Y direction.
 # ============================================================
-FIELD_W = 423   # cm — horizontal (X axis)
-FIELD_H = 243   # cm — vertical   (Y axis, 0 at top, -FIELD_H at bottom)
+FIELD_W      = 423   # cm — horizontal (X axis)
+FIELD_H      = 243   # cm — vertical   (Y axis, 0 at top, -FIELD_H at bottom)
+ROBOT_WIDTH  = 33    # cm — physical robot diameter (used for map body drawing)
+ROBOT_RADIUS = ROBOT_WIDTH / 2.0   # 16.5 cm
+
+# IMU HEADING CONVERSION
+# The BNO055 reports Euler heading: 0 = North (up on map), increases clockwise.
+# The GUI uses math convention: 0 = East (+X), increases counter-clockwise.
+# Conversion:  gui_heading = 90.0 - imu_heading
+# This is applied every time an IMU: packet is received.
+IMU_ENABLED = True   # Set False to fall back to pure dead-reckoning only
 
 # Distance from any wall (cm) that triggers the 'o' warning to the robot
 OOB_THRESHOLD = 15   # cm
@@ -41,12 +50,12 @@ SEND_OOB_WARNING_TO_ROBOT = False  # Keep False: firmware uses 'o' for LEFT_90.
 # Change these once you know the physical mounting angles.
 # ============================================================
 ADC_SENSOR_ANGLES = {
-    1:  30,    # Light bump center left
-    2:  55,    # Light bump front left
-    3:  80,    # Light bump front right
-    4:  100,   # Light bump left side
-    5:  125,   # Light bump right side
-    6:  150,   # Light bump center right
+    1:  10,    # Light bump center left
+    2:  45,    # Light bump front left
+    3: -45,    # Light bump front right
+    4:  90,    # Light bump left side
+    5: -90,    # Light bump right side
+    6: -10,    # Light bump center right
     7:  90,    # Cliff/bottom left
     8:  35,    # Cliff/bottom front left
     9: -35,    # Cliff/bottom front right
@@ -62,34 +71,24 @@ ADC_DIST_SCALE = 0.05   # cm per ADC count — adjust to match real sensor range
 # ============================================================
 # SOCKET SETUP  — comment back in when connected to robot
 # ============================================================
-# sock = None
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.connect((HOST, PORT))
-sock.setblocking(False)
+sock = None
+#sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#sock.connect((HOST, PORT))
+#sock.setblocking(False)
 
 recv_buffer = ""
 
-# Firmware owns pose with encoder distance + BNO055 heading.
+# Keep True if you want the map to move immediately when you click buttons.
+# Set False after firmware MOV: telemetry is stable to avoid double-counting.
 LOCAL_DEAD_RECKONING_ON_BUTTON_PRESS = False
 
 # Debounce repeated/overlapping keypresses so a held key does not spam UART.
 COMMAND_COOLDOWN = 0.08  # seconds
 _last_sent = {}
-_active_movement_key = None
-USE_COMPACT_COMMANDS = True
-COMPACT_COMMANDS = {
-    "START_FORWARD": "w",
-    "START_BACKWARD": "s",
-    "START_LEFT": "a",
-    "START_RIGHT": "d",
-    "STOP": "x",
-    "TURN_LEFT:90": "o",
-    "TURN_RIGHT:90": "p",
-    "SCAN": "m",
-    "SCAN_LEFT": "n",
-    "SCAN_RIGHT": "l",
-    "h": "h",
-}
+
+# Continuous turns do not have a known angle locally, so the GUI should not
+# rotate the map for move_left()/move_right() unless the robot sends MOV:<angle>l/r.
+# The fixed 90-degree functions below do have known angles and can update the map.
 
 
 # ============================================================
@@ -239,8 +238,6 @@ def apply_movements(start_x, start_y, start_heading, movements):
 # ============================================================
 scans      = []
 col_events = []
-manual_markers = []   # user-placed object markers: [(x, y), ...]
-MARKER_PICK_RADIUS_CM = 10
 
 def ingest_scan(data):
     scan_number = len(scans) + 1
@@ -280,9 +277,11 @@ _active_ir_vals   = []
 # ============================================================
 # LIVE POSE
 # ============================================================
-live_x       = 0.0
-live_y       = 0.0
-live_heading = -90.0      # start at top-left facing DOWN (-Y direction)
+# Start at (ROBOT_RADIUS, -ROBOT_RADIUS) so the 33 cm body is fully inside the field.
+live_x       = ROBOT_RADIUS        # 16.5 cm from left wall
+live_y       = -ROBOT_RADIUS       # 16.5 cm from top wall
+live_heading = -90.0               # facing DOWN (-Y direction)
+_imu_heading_valid = False         # True once first IMU: packet has been received
 _in_scan     = False
 bump_left    = 0
 bump_right   = 0
@@ -319,14 +318,27 @@ def _check_bounds():
 
 
 def apply_single_movement(cmd):
+    """
+    Apply one movement command to the live pose.
+
+    For translation (f/b): always update XY using the current live_heading.
+    For rotation (r/l):    only update heading when IMU is not active
+                           (i.e. no IMU: packet has been received yet).
+                           Once the IMU is streaming, live_heading is owned
+                           by the IMU; dead-reckoned turns are discarded.
+    """
     global live_x, live_y, live_heading
 
     value, direction = parse_movement(cmd)
 
     if direction == 'r':
-        live_heading -= value
+        if not _imu_heading_valid:
+            live_heading -= value
+            live_heading %= 360
     elif direction == 'l':
-        live_heading += value
+        if not _imu_heading_valid:
+            live_heading += value
+            live_heading %= 360
     elif direction == 'f':
         rad = math.radians(live_heading)
         live_x += value * MOVEMENT_SCALE * math.cos(rad)
@@ -336,10 +348,29 @@ def apply_single_movement(cmd):
         live_x -= value * MOVEMENT_SCALE * math.cos(rad)
         live_y -= value * MOVEMENT_SCALE * math.sin(rad)
 
-    live_heading %= 360
     _check_bounds()
     draw_map()
     return True
+
+
+def apply_imu_heading(imu_degrees):
+    """
+    Called when an IMU:<degrees> packet arrives from the robot.
+
+    Converts the BNO055 Euler heading (0 = North / up-on-map, clockwise)
+    to the GUI math convention (0 = East / +X, counter-clockwise):
+
+        gui_heading = 90.0 - imu_heading
+
+    This keeps the arrow pointing in the direction the robot actually faces.
+    """
+    global live_heading, _imu_heading_valid
+    if not IMU_ENABLED:
+        return
+    live_heading = (90.0 - imu_degrees) % 360
+    _imu_heading_valid = True
+    _check_bounds()
+    draw_map()
 
 
 def terminal_log(msg):
@@ -364,40 +395,40 @@ BTN_STYLE = dict(bg="#16213e", fg="#e0e0e0", activebackground="#0f3460",
                  font=("Courier New", 9, "bold"), padx=8, pady=3)
 
 def start_scan():
-    _send_command("SCAN", "scan")
+    _send_command(b'm', 'm')
 
 def stop_scan():
-    _send_command("h", "stop_scan")
+    _send_command(b'h', 'h')
 
 def start_zero_to_ninety_scan():
-    _send_command("SCAN_LEFT", "scan_left")
+    _send_command(b'n', 'n')
 
 def start_ninety_to_oneeighty_scan():
-    _send_command("SCAN_RIGHT", "scan_right")
+    _send_command(b'l', 'l')
 
 def clear_graph():
+    global live_x, live_y, live_heading, _oob_warning_sent, _imu_heading_valid
     scan_graph_data.clear()
     _active_angles.clear(); _active_ping_vals.clear(); _active_ir_vals.clear()
-    ax1.clear(); ax2.clear()
-    style_axes(); graph_canvas.draw(); draw_map()
-
-
-def reset_map():
-    global live_x, live_y, live_heading, _oob_warning_sent
-    scan_graph_data.clear()
-    _active_angles.clear(); _active_ping_vals.clear(); _active_ir_vals.clear()
-    scans.clear(); col_events.clear(); manual_markers.clear()
-    live_x, live_y, live_heading = 0.0, 0.0, -90.0
+    scans.clear(); col_events.clear()
+    live_x, live_y, live_heading = ROBOT_RADIUS, -ROBOT_RADIUS, -90.0
+    _imu_heading_valid = False
     _oob_warning_sent = False
     ax1.clear(); ax2.clear()
     style_axes(); graph_canvas.draw(); draw_map()
 
-def _send_command(command, label=None):
-    """Send one newline-terminated high-level command to the firmware."""
-    now = time.time()
-    label = label or command
+def _send_command(byte_cmd, label, local_movement=None):
+    """
+    Send exactly one command byte to the robot.
 
-    if command != "STOP":
+    Do NOT add '\n'. Your TM4C interrupt handler expects single-character
+    commands like w/s/a/d/x/m/h/n/l/o/p. Newlines can hit the default case
+    in the ISR and stop the robot.
+    """
+    now = time.time()
+
+    # Always allow stop through immediately. Debounce everything else.
+    if label != 'x':
         last = _last_sent.get(label, 0)
         if now - last < COMMAND_COOLDOWN:
             return
@@ -408,14 +439,12 @@ def _send_command(command, label=None):
             terminal_log(f"[ERROR] Socket is None. Could not send: {label}\n")
             return
 
-        wire_command = COMPACT_COMMANDS.get(command, command) if USE_COMPACT_COMMANDS else command
-        suffix = "" if USE_COMPACT_COMMANDS and wire_command in COMPACT_COMMANDS.values() else "\r\n"
-        payload = (wire_command + suffix).encode("ascii")
+        # Temporarily use blocking mode so one-byte commands leave cleanly.
         sock.setblocking(True)
-        sock.sendall(payload)
+        sock.sendall(byte_cmd)
         sock.setblocking(False)
 
-        terminal_log(f"Sent: {command} [{wire_command!r}]\n")
+        terminal_log(f"Sent byte: {byte_cmd!r} ({label})\n")
 
     except Exception as e:
         terminal_log(f"[SEND ERROR] {label}: {e}\n")
@@ -426,39 +455,53 @@ def _send_command(command, label=None):
             pass
         return
 
+    if LOCAL_DEAD_RECKONING_ON_BUTTON_PRESS and local_movement:
+        try:
+            apply_single_movement(local_movement)
+            terminal_log(f"  [local movement applied: {local_movement}]\n")
+        except ValueError as e:
+            terminal_log(f"  [local movement ignored: {e}]\n")
+
 
 def move_forward():
-    _send_command("START_FORWARD", "forward")
+    # Keep this distance synced with whatever the robot firmware does for 'w'.
+    _send_command(b'w', 'w', '50f')
 
 
 def move_backward():
-    _send_command("START_BACKWARD", "backward")
+    # Keep this distance synced with whatever the robot firmware does for 's'.
+    _send_command(b's', 's', '50b')
 
 
 def move_right():
-    _send_command("START_RIGHT", "right")
+    # Continuous right turn: send only. The GUI cannot know the angle unless
+    # the robot sends back something like MOV:12r or MOV:90r.
+    _send_command(b'd', 'd')
 
 
 def move_left():
-    _send_command("START_LEFT", "left")
+    # Continuous left turn: send only. The GUI cannot know the angle unless
+    # the robot sends back something like MOV:12l or MOV:90l.
+    _send_command(b'a', 'a')
 
 
 def turn_right_90():
-    _send_command("TURN_RIGHT:90", "turn_right_90")
+    # Fixed 90-degree right turn: safe to dead-reckon on the map.
+    _send_command(b'p', 'p')
 
 
 def turn_left_90():
-    _send_command("TURN_LEFT:90", "turn_left_90")
+    # Fixed 90-degree left turn: safe to dead-reckon on the map.
+    _send_command(b'o', 'o')
 
 def stop():
-    _send_command("STOP", "stop")
+    _send_command(b'x', 'x')
 
 tk.Button(btn_frame, text="Start Scan",        command=start_scan,                     **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Start 0-90 Scan",   command=start_zero_to_ninety_scan,      **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Start 90-180 Scan", command=start_ninety_to_oneeighty_scan, **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Stop Scan",         command=stop_scan,                      **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Clear Graph",       command=clear_graph,                    **BTN_STYLE).pack(side=tk.LEFT, padx=3)
-tk.Button(btn_frame, text="Reset",             command=reset_map,                      **BTN_STYLE).pack(side=tk.LEFT, padx=3)
 tk.Button(btn_frame, text="Right 90",  command=turn_right_90,  **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
 tk.Button(btn_frame, text="Left 90", command=turn_left_90, **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
 tk.Button(btn_frame, text="↑ Forward",  command=move_forward,  **BTN_STYLE).pack(side=tk.RIGHT, padx=3)
@@ -513,7 +556,6 @@ show_ir_dots   = tk.BooleanVar(value=True)
 show_adc_rays  = tk.BooleanVar(value=True)   # line from robot → dot
 show_adc_dots  = tk.BooleanVar(value=True)   # projected detection dot
 show_path      = tk.BooleanVar(value=True)
-show_manual_markers = tk.BooleanVar(value=True)
 
 SWITCH_ON_BG = "#083951"
 SWITCH_OFF_BG = "#2a2a3e"
@@ -610,7 +652,6 @@ tk.Frame(row2, height=16, **SEP_STYLE).pack(side=tk.LEFT, padx=10, fill=tk.Y)
 tk.Label(row2, text="MAP", bg="#0d0d1a", fg="#aaaacc",
          font=SWITCH_FONT, width=4).pack(side=tk.LEFT, padx=(0, 2))
 ToggleSwitch(row2, "path", show_path, callback=_redraw).pack(side=tk.LEFT, padx=1)
-ToggleSwitch(row2, "marks", show_manual_markers, callback=_redraw).pack(side=tk.LEFT, padx=1)
 
 
 # ---- RIGHT panel: vertical pane — map on top, terminal on bottom ----
@@ -682,48 +723,6 @@ style_map_ax()
 map_canvas = FigureCanvasTkAgg(map_fig, master=map_frame)
 map_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
-def on_map_click(event):
-    """
-    Right-click on the map to place/remove a manual object marker.
-    Similar to marking a mine in Minesweeper.
-
-    Right-click empty spot: add marker.
-    Right-click near existing marker: remove marker.
-    """
-    if event.inaxes != map_ax:
-        return
-
-    # Matplotlib button 3 = right mouse button
-    if event.button != 3:
-        return
-
-    if event.xdata is None or event.ydata is None:
-        return
-
-    x, y = event.xdata, event.ydata
-
-    # Keep markers inside the field only
-    if not (0 <= x <= FIELD_W and -FIELD_H <= y <= 0):
-        terminal_log("  [marker ignored: outside field]\n")
-        return
-
-    # If right-click near an existing marker, remove it
-    for i, (mx, my) in enumerate(manual_markers):
-        dist = math.hypot(x - mx, y - my)
-        if dist <= MARKER_PICK_RADIUS_CM:
-            removed = manual_markers.pop(i)
-            terminal_log(f"  [object marker removed at ({removed[0]:.1f}, {removed[1]:.1f})]\n")
-            draw_map()
-            return
-
-    # Otherwise add a new marker
-    manual_markers.append((x, y))
-    terminal_log(f"  [object marker added at ({x:.1f}, {y:.1f})]\n")
-    draw_map()
-
-
-map_canvas.mpl_connect("button_press_event", on_map_click)
-
 
 # ============================================================
 # MAP DRAWING
@@ -742,35 +741,45 @@ def draw_map():
     map_ax.clear()
     style_map_ax()
 
-    # live robot marker
-    live_rad       = math.radians(live_heading)
-    live_arrow_len = 20  # cm
-    map_ax.annotate("",
-        xy=(live_x + live_arrow_len * math.cos(live_rad),
-            live_y + live_arrow_len * math.sin(live_rad)),
-        xytext=(live_x, live_y),
-        arrowprops=dict(arrowstyle="->", color="#00ffff", lw=2),
-        zorder=10)
-    map_ax.scatter(live_x, live_y, color="#00ffff", s=80, zorder=11,
-                   edgecolors="#fff", linewidths=0.8, marker='^')
+    # ── live robot body ──────────────────────────────────────────────────────
+    # Draw a to-scale circle (33 cm diameter = ROBOT_WIDTH) representing the
+    # physical robot footprint, plus a heading arrow from centre to front edge.
+    from matplotlib.patches import Circle as MplCircle
 
-    # manual object markers placed by user
-    if show_manual_markers.get() and manual_markers:
-        for i, (mx, my) in enumerate(manual_markers, start=1):
-            map_ax.scatter(mx, my,
-                           color="#ffdd00", s=120, zorder=30,
-                           marker="X", edgecolors="#000000", linewidths=0.8)
-            map_ax.text(mx + 4, my + 4,
-                        f"M{i}", color="#ffdd00",
-                        fontsize=8, fontfamily="Courier New",
-                        fontweight="bold", zorder=31)
+    live_rad = math.radians(live_heading)
+
+    # Body circle — cyan when normal, yellow outline when IMU is active
+    body_edge = "#ffdd00" if _imu_heading_valid else "#00ffff"
+    robot_circle = MplCircle(
+        (live_x, live_y), ROBOT_RADIUS,
+        linewidth=1.8, edgecolor=body_edge,
+        facecolor="#003333" if _imu_heading_valid else "#001a1a",
+        alpha=0.85, zorder=10
+    )
+    map_ax.add_patch(robot_circle)
+
+    # Heading arrow — tip at the front edge of the robot body
+    arrow_tip_x = live_x + ROBOT_RADIUS * math.cos(live_rad)
+    arrow_tip_y = live_y + ROBOT_RADIUS * math.sin(live_rad)
+    map_ax.annotate("",
+        xy=(arrow_tip_x, arrow_tip_y),
+        xytext=(live_x, live_y),
+        arrowprops=dict(arrowstyle="->", color=body_edge, lw=2),
+        zorder=11)
+
+    # IMU status badge in top-left of the map
+    imu_label = "IMU ✓" if _imu_heading_valid else "IMU —"
+    imu_color = "#00ff88" if _imu_heading_valid else "#555566"
+    map_ax.text(5, -5, imu_label, color=imu_color,
+                fontsize=8, fontfamily="Courier New", fontweight="bold",
+                va="top", zorder=20)
 
     # bump indicator
     if bump_left or bump_right:
         c = "#ff0000" if (bump_left and bump_right) else "#ffaa00"
-        map_ax.scatter(live_x, live_y, color=c, s=140, zorder=12, alpha=0.6)
+        map_ax.scatter(live_x, live_y, color=c, s=200, zorder=12, alpha=0.5)
         if bump_left:
-            map_ax.text(live_x - 10, live_y, "L", color="#ff4444",
+            map_ax.text(live_x - 14, live_y, "L", color="#ff4444",
                         fontsize=10, zorder=13)
         if bump_right:
             map_ax.text(live_x + 10, live_y, "R", color="#ff4444",
@@ -874,10 +883,6 @@ def _draw_legend():
     if show_adc_rays.get() or show_adc_dots.get():
         elems.append(Patch(facecolor=ADC_COLOR, edgecolor="#ff88ff",
                            alpha=0.6, label="ADC"))
-    if show_manual_markers.get() and manual_markers:
-        elems.append(Line2D([0],[0], color="#ffdd00", marker="X",
-                            linestyle="None", markersize=7,
-                            label="Marked Object"))
     if elems:
         map_ax.legend(handles=elems, loc="upper right",
                       facecolor="#1a1a2e", edgecolor="#333",
@@ -923,7 +928,7 @@ def redraw_graphs():
 
 
 def update_data():
-    global recv_buffer, _in_scan, live_x, live_y, live_heading
+    global recv_buffer, _in_scan
 
     if sock:
         try:
@@ -944,21 +949,23 @@ def update_data():
             terminal.insert(tk.END, line + "\n")
             terminal.see(tk.END)
 
-            # POS: firmware pose from encoder distance + BNO055 heading.
-            if line.startswith("POS:"):
-                parts = line[4:].split(',')
-                if len(parts) == 3:
-                    try:
-                        live_x = float(parts[0].strip())
-                        live_y = float(parts[1].strip())
-                        live_heading = float(parts[2].strip()) % 360
-                        _check_bounds()
-                        draw_map()
-                    except ValueError:
-                        terminal_log(f"  [ignored bad POS packet: {line!r}]\n")
+            # IMU: — BNO055 fused heading
+            # Format: IMU:<degrees>   e.g. "IMU:273.5"
+            # Degrees are BNO055 Euler heading: 0 = North, clockwise, 0–360.
+            # apply_imu_heading() converts to GUI math convention automatically.
+            if line.startswith("IMU:"):
+                raw_hdg = line[4:].strip()
+                try:
+                    imu_deg = float(raw_hdg)
+                    apply_imu_heading(imu_deg)
+                    terminal.insert(tk.END,
+                        f"  [IMU heading={imu_deg:.1f}° → gui={live_heading:.1f}°]\n")
+                    terminal.see(tk.END)
+                except ValueError:
+                    print(f"[WARNING] Bad IMU packet: {line}")
 
-            # MOV: retained as a fallback for older firmware.
-            elif line.startswith("MOV:"):
+            # MOV:
+            if line.startswith("MOV:"):
                 raw_cmd = line[4:].strip()
                 clean_cmd = extract_movement_from_packet(raw_cmd)
 
@@ -1080,7 +1087,7 @@ def load_demo_scans():
         return [(a, random.uniform(30, 150), random.randint(200, 2000))
                 for a in range(0, 181, 5)]
 
-    # Movements are relative; robot starts at (0,0) heading -90 (down).
+    # Robot starts at (ROBOT_RADIUS, -ROBOT_RADIUS) heading -90 (down).
     # "f" moves in -Y direction, so positions stay inside the field.
     demo_scans = [
         ([], fake_data()),
@@ -1100,47 +1107,24 @@ def load_demo_scans():
         for sid in random.sample(range(1, 7), k=random.randint(2, 4)):
             ingest_col_event(sid, random.randint(400, 3800))
 
-# load_demo_scans()
+load_demo_scans()
 
 # ============================================================
 # KEYBOARD BINDINGS
 # ============================================================
 def on_key_press(event):
-    global _active_movement_key
     key = event.keysym.lower()
-    movement_keys = {
-        'w': move_forward,
-        's': move_backward,
-        'a': move_left,
-        'd': move_right,
-    }
-
-    if key in movement_keys:
-        if _active_movement_key is None:
-            _active_movement_key = key
-            movement_keys[key]()
-    elif key == 'p':
-        turn_right_90()
-    elif key == 'o':
-        turn_left_90()
-    elif key in ('x', 'space'):
-        _active_movement_key = None
-        stop()
-    elif key == 'm':
-        start_scan()
-    elif key == 'h':
-        stop_scan()
-
-
-def on_key_release(event):
-    global _active_movement_key
-    key = event.keysym.lower()
-    if key == _active_movement_key:
-        _active_movement_key = None
-        stop()
+    if   key == 'w':             move_forward()
+    elif key == 's':             move_backward()
+    elif key == 'a':             move_left()
+    elif key == 'd':             move_right()
+    elif key == 'p':             turn_right_90()
+    elif key == 'o':             turn_left_90()
+    elif key in ('x', 'space'): stop()
+    elif key == 'm':             start_scan()
+    elif key == 'h':             stop_scan()
 
 root.bind("<KeyPress>", on_key_press)
-root.bind("<KeyRelease>", on_key_release)
 root.focus_set()
 
 # ============================================================
