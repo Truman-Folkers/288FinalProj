@@ -161,7 +161,7 @@ double turn_left(oi_t *sensor_data, double degrees)
 
     oi_setWheels(150, -150);
 
-    while (angle_robot < degrees - 10.8) //degrees - 8 for CyBot 24
+    while (angle_robot < degrees - 10) //degrees - 8 for CyBot 24
     {
         oi_update(sensor_data);
         angle_robot = angle_robot + sensor_data->angle;
@@ -179,7 +179,7 @@ double turn_right(oi_t *sensor_data, double degrees)
 
     oi_setWheels(-150, 150);
 
-    while (angle_robot > two + 12) //two + 10 for CyBot 24
+    while (angle_robot > two + 10) //two + 10 for CyBot 24
     {
         oi_update(sensor_data);
         angle_robot = angle_robot + sensor_data->angle;

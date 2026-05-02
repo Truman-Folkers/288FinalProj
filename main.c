@@ -260,7 +260,7 @@ void scan_and_map(oi_t *sensor_data)
         }
 
         irPrev = irAverage;
-
+        irAverage= irAverage * 2;
         // Sending data to GUI through socket
         sprintf(buffer, "%d,%.2f,%d\n", angle, pingDist, irAverage);
 
@@ -393,11 +393,11 @@ int main(void)
 //    left_calibration_value = 1282750;
 
     right_cal_value = 8533;
-    left_cal_value = 37333;
+    left_cal_value = 36266;
 
     servo_init();
 
-//    servo_calibrate();
+  //servo_calibrate();
     ping_init();
 
     lcd_printf("Send 'm'");
